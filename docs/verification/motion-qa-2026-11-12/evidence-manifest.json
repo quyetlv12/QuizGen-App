@@ -1,0 +1,19 @@
+{
+  "capturedAt": "2026-11-12T13:11:31.406038+07:00",
+  "sha256": {
+    "docs/verification/motion-qa-2026-11-12/analyze.log": "610a8e702e7460ba4eeae6339a21f20932dc94aa4a6adccca1907950965d99c1",
+    "docs/verification/motion-qa-2026-11-12/environment.log": "40d39bdfc001b359d3971b807bcae0fbaf55304892059ebf831bc24825b6cd43",
+    "docs/verification/motion-qa-2026-11-12/format.log": "bf353c39ea1319f2150de6238e817e030ef91cbc9c0556310d61a7f8e9dbfe63",
+    "docs/verification/motion-qa-2026-11-12/gates.json": "03598b44c24b641aa21a247f438a55b179e21c5848ef394970120a5e3c9462c1",
+    "docs/verification/motion-qa-2026-11-12/hashes-after.json": "930ebbbf286c3d9de9f9c4bbab97f92ba8abdb8570c375bed1db7b120ece182d",
+    "docs/verification/motion-qa-2026-11-12/hashes-before.json": "d4fe75a62f5df08abb4935e19af440ac73f6fda1cbecd4ea078674b154a9dfc4",
+    "docs/verification/motion-qa-2026-11-12/independent-test.log": "01d1cefd1ae41d3dead12182de4111f2269fb6759bee09dd4513389591a2e908",
+    "docs/verification/motion-qa-2026-11-12/independent_motion_test.dart": "9e1994ce51d86c26e8ed5a96cda08e2711be7dd8789da31bd776bc8c4f8aaf2e",
+    "docs/verification/motion-qa-2026-11-12/ios-build.log": "2b04df96e1de3064de17f320faecc61b49638dad39515d6e8d63f991ee643f78",
+    "docs/verification/motion-qa-2026-11-12/simulators.log": "293e58e47683392b7db2cd867e40110446bc30a88981d5fdbbe073efaf34152b",
+    "docs/verification/motion-qa-2026-11-12/test.log": "e2e3fee6abf5cd93555e2d6e5d0e5a6ac80bcdaede49e3b22e1df6bc10c59e27",
+    "docs/verification/motion-qa-2026-11-12/ui-availability.json": "865f76944b5958f829d096df2ff7b4a450d5dbaadeaeeb0b366534d50e739acc",
+    "docs/verification/motion-qa-2026-11-12/xcode.log": "2f247ae9248bdf12da941cd7ec9a5745948a5f5167ae8b41e1d8c6deef19d751",
+    "docs/verification/motion-qa-2026-11-12.md": "3c5d998b9193fa406f13448c699cc1417e1dfcd49d1d91a80d7abe4013edb241"
+  }
+}

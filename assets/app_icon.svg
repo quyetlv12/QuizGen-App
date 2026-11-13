@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <title>QuizMind AI — document and intelligence</title>
+  <rect width="1024" height="1024" fill="#008F21"/>
+  <rect x="240" y="190" width="520" height="660" rx="64" fill="#006C39"/>
+  <path d="M300 160H576L744 328V764Q744 824 684 824H300Q240 824 240 764V220Q240 160 300 160Z" fill="#FFFFFF"/>
+  <path d="M576 160V276Q576 328 628 328H744Z" fill="#CFF3D7"/>
+  <rect x="328" y="388" width="264" height="32" rx="16" fill="#008F21"/>
+  <rect x="328" y="472" width="216" height="32" rx="16" fill="#008F21"/>
+  <rect x="328" y="556" width="136" height="32" rx="16" fill="#008F21"/>
+  <circle cx="692" cy="686" r="160" fill="#008F21"/>
+  <path d="M692 552L729 649L826 686L729 723L692 820L655 723L558 686L655 649Z" fill="#E5FFB9"/>
+  <path d="M826 455L843 498L886 515L843 532L826 575L809 532L766 515L809 498Z" fill="#E5FFB9"/>
+</svg>

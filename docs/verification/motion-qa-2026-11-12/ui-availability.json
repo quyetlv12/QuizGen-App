@@ -1,0 +1,12 @@
+{
+  "date": "2026-11-12",
+  "observer": "Linh QA",
+  "surface": "mounted computer",
+  "observations": [
+    {"action":"list Simulator windows", "result":{"current_space_id":1,"windows":[]}},
+    {"action":"launch com.apple.iphonesimulator in background", "result":{"bundle_id":"com.apple.iphonesimulator","code":"tool_invocation_failed","error":"APP_NOT_INSTALLED"},"message":"No installed macOS app found for bundle_id 'com.apple.iphonesimulator'."},
+    {"action":"list apps and filter simulator/xcode/quiz", "result":[{"bundle_id":"com.apple.dt.Xcode","launch_path":"/Applications/Xcode.app","name":"Xcode","running":true,"pid":67927,"active":false}]},
+    {"action":"inspect standard Simulator.app location", "path":"/Applications/Xcode.app/Contents/Developer/Applications/Simulator.app","result":"No such file or directory"}
+  ],
+  "note":"Typed observation record of actual responses in this QA turn. Not a screenshot or UI interaction proof. simctl reports booted devices, but this does not prove a visible Simulator window or that the current app is running. No foreground workaround, no shell-driven UI, no screenshots/video or actual app UI observed."
+}

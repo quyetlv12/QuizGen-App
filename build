@@ -1,0 +1,59 @@
+#!/bin/zsh
+set -euo pipefail
+
+ROOT="${0:A:h}"
+cd "$ROOT"
+CONFIG="$HOME/.config/quizmind"
+URL_FILE="$CONFIG/phone-url"
+PHONE_LOG="$CONFIG/build-phone.log"
+
+remote_ready() {
+  [[ -s "$URL_FILE" ]] || return 1
+  python3 - "$URL_FILE" <<'PY'
+import pathlib
+import sys
+import urllib.request
+project = pathlib.Path.cwd()
+url = pathlib.Path(sys.argv[1]).read_text().strip().rstrip('/')
+try:
+    sys.path.insert(0, str(project / 'server'))
+    from app import load_auth_token
+    request = urllib.request.Request(url + '/api/health', headers={'Authorization': 'Bearer ' + load_auth_token()})
+    with urllib.request.urlopen(request, timeout=5) as response:
+        raise SystemExit(0 if response.status == 200 else 1)
+except Exception:
+    raise SystemExit(1)
+PY
+}
+
+phone_pid=""
+cleanup() {
+  if [[ -n "$phone_pid" ]] && kill -0 "$phone_pid" 2>/dev/null; then
+    kill -TERM "$phone_pid" 2>/dev/null || true
+    wait "$phone_pid" 2>/dev/null || true
+  fi
+}
+trap cleanup EXIT INT TERM
+
+if ! remote_ready; then
+  mkdir -p "$CONFIG"
+  umask 077
+  python3 "$ROOT/scripts/start-phone.py" >"$PHONE_LOG" 2>&1 &
+  phone_pid=$!
+  ready=0
+  for _ in {1..180}; do
+    if remote_ready; then ready=1; break; fi
+    kill -0 "$phone_pid" 2>/dev/null || { echo "Không bật được backend/tunnel; xem log riêng tại ~/.config/quizmind/build-phone.log." >&2; exit 1; }
+    sleep 1
+  done
+  [[ "$ready" == 1 ]] || { echo "Chờ backend/tunnel quá hạn; xem ~/.config/quizmind/build-phone.log." >&2; exit 1; }
+fi
+
+device_id="$(flutter --build-dir="$ROOT/.flutter-build" devices --machine | python3 -c 'import json,sys; print(next((d["id"] for d in json.load(sys.stdin) if d.get("targetPlatform")=="ios" and not d.get("emulator") and d.get("isSupported")), ""))')"
+if [[ -z "$device_id" ]]; then
+  echo "Không tìm thấy iPhone thật. Hãy kết nối, mở khóa và tin cậy máy Mac trong iPhone." >&2
+  exit 1
+fi
+
+echo "Đang build và cài lên iPhone: $device_id"
+python3 "$ROOT/scripts/flutter-local.py" --phone run -d "$device_id" --release --build-dir="$ROOT/.flutter-build"

@@ -1,0 +1,14 @@
+{
+  "time": "2026-11-12T13:06:15.560658+07:00",
+  "sha256": {
+    "lib/theme.dart": "3e65d9479c2858e82329128fb93e5aeb5c14b89c75c3649fc678d7b69de625e6",
+    "lib/ui.dart": "cf6b834db19b6e2ed9252a2d97e11086162ea214e2cccc179e0aabc6246d7b89",
+    "lib/main.dart": "ffda6e1bb9979cf593991d102fadd0eabdad98894c49311da7f78c432a6cda5d",
+    "test/motion_test.dart": "1e6aaf63e8d058ecfffcd2721c3cf842a474432d915a5aad8a5e678e7f47ab50",
+    "test/app_test.dart": "67c9030e62ccf9b5b54bbe65c0eb50b63d15fd00d44c0d5e4a7543611504ea6f",
+    "lib/api.dart": "aab3a0b301d4853df6701806e1f64b7bb9061d8dd8f91c421d05a47c86f98039",
+    "docs/product/motion-upgrade-2026-11-12.md": "348475775f179ce7e7c60292cb87671d0134becc17a083eb8be7b1cf3378348e",
+    "docs/design/motion-2026-11-12.md": "35708eb093ab09a64fbb84ced0538a0a075010249c064694fde51b86a805310d",
+    "docs/verification/motion-dev-2026-11-12.md": "0cf7907513fd637a2e9f617c69fa2cd7a7a1f7ffcd04d7eff4c87f4311f23492"
+  }
+}

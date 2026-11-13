@@ -1,0 +1,28 @@
+#!/bin/zsh
+set -euo pipefail
+
+ROOT="${0:A:h}"
+cd "$ROOT"
+
+health_ready() {
+  [[ "$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:8787/api/health 2>/dev/null || true)" == "401" ]]
+}
+
+server_pid=""
+if ! health_ready; then
+  mkdir -p "$ROOT/.local"
+  umask 077
+  "$ROOT/scripts/start-server.sh" >"$ROOT/.local/dev-server.log" 2>&1 &
+  server_pid=$!
+  trap 'kill "$server_pid" 2>/dev/null || true' EXIT INT TERM
+  for _ in {1..60}; do
+    health_ready && break
+    kill -0 "$server_pid" 2>/dev/null || { cat "$ROOT/.local/dev-server.log" >&2; exit 1; }
+    sleep 0.5
+  done
+  health_ready || { echo "Backend chưa sẵn sàng; xem .local/dev-server.log." >&2; exit 1; }
+fi
+
+device_id="$(flutter --build-dir="$ROOT/.flutter-build" devices --machine | python3 -c 'import json,sys; print(next((d["id"] for d in json.load(sys.stdin) if d.get("emulator") and d.get("targetPlatform")=="ios" and d.get("isSupported")), ""))')"
+[[ -n "$device_id" ]] || { echo "Không tìm thấy máy ảo iOS đang có trong Flutter devices." >&2; exit 1; }
+exec python3 "$ROOT/scripts/flutter-local.py" run -d "$device_id" --build-dir="$ROOT/.flutter-build"

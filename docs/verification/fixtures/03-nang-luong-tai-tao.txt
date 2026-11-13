@@ -1,0 +1,9 @@
+Năng lượng tái tạo và lưu trữ
+
+Năng lượng tái tạo đến từ những nguồn có thể bổ sung trong thời gian tương đối ngắn như ánh sáng Mặt Trời, gió, nước chảy, sinh khối và nhiệt trong lòng đất. Điện mặt trời biến đổi bức xạ ánh sáng thành điện năng nhờ các tế bào quang điện. Điện gió dùng tua-bin để biến chuyển động của không khí thành điện.
+
+Các nguồn tái tạo thường phát thải thấp trong giai đoạn vận hành, nhưng mỗi công nghệ vẫn có tác động môi trường và yêu cầu hạ tầng riêng. Trang trại điện gió cần diện tích và phải xem xét tiếng ồn, chim di cư. Thủy điện có thể thay đổi dòng chảy và ảnh hưởng đến hệ sinh thái sông.
+
+Lưu trữ năng lượng giúp cân bằng thời điểm sản xuất và tiêu thụ. Pin lithium-ion có thể sạc và xả nhiều lần, phù hợp với hệ thống cần phản hồi nhanh. Thủy điện tích năng dùng điện dư để bơm nước lên cao rồi phát điện khi nhu cầu tăng. Lưu trữ không tạo ra năng lượng mới; nó chuyển năng lượng từ thời điểm này sang thời điểm khác.
+
+Kết hợp nhiều nguồn, dự báo thời tiết, lưới điện linh hoạt và sử dụng tiết kiệm có thể làm hệ thống ổn định hơn. Hiệu quả của một dự án cần được đánh giá theo toàn bộ vòng đời, gồm xây dựng, vận hành, bảo trì và xử lý thiết bị sau khi hết hạn sử dụng.

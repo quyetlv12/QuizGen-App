@@ -1,0 +1,52 @@
+[
+  {
+    "label": "format",
+    "command": [
+      "dart",
+      "format",
+      "--output=none",
+      "--set-exit-if-changed",
+      "lib/theme.dart",
+      "lib/ui.dart",
+      "lib/main.dart",
+      "test/motion_test.dart"
+    ],
+    "exitCode": 0,
+    "started": "2026-11-12T13:06:29.576547+07:00"
+  },
+  {
+    "label": "analyze",
+    "command": [
+      "flutter",
+      "analyze",
+      "--no-pub"
+    ],
+    "exitCode": 0,
+    "started": "2026-11-12T13:06:29.816558+07:00"
+  },
+  {
+    "label": "test",
+    "command": [
+      "flutter",
+      "test",
+      "--no-pub",
+      "--reporter",
+      "expanded"
+    ],
+    "exitCode": 0,
+    "started": "2026-11-12T13:06:31.913528+07:00"
+  },
+  {
+    "label": "ios-build",
+    "command": [
+      "flutter",
+      "build",
+      "ios",
+      "--simulator",
+      "--debug",
+      "--no-pub"
+    ],
+    "exitCode": 0,
+    "started": "2026-11-12T13:06:36.687672+07:00"
+  }
+]

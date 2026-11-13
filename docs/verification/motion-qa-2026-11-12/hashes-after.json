@@ -1,0 +1,36 @@
+{
+  "time": "2026-11-12T13:09:27.945285+07:00",
+  "sha256": {
+    "lib/theme.dart": "3e65d9479c2858e82329128fb93e5aeb5c14b89c75c3649fc678d7b69de625e6",
+    "lib/ui.dart": "cf6b834db19b6e2ed9252a2d97e11086162ea214e2cccc179e0aabc6246d7b89",
+    "lib/main.dart": "ffda6e1bb9979cf593991d102fadd0eabdad98894c49311da7f78c432a6cda5d",
+    "test/motion_test.dart": "1e6aaf63e8d058ecfffcd2721c3cf842a474432d915a5aad8a5e678e7f47ab50",
+    "test/app_test.dart": "67c9030e62ccf9b5b54bbe65c0eb50b63d15fd00d44c0d5e4a7543611504ea6f",
+    "lib/api.dart": "aab3a0b301d4853df6701806e1f64b7bb9061d8dd8f91c421d05a47c86f98039",
+    "docs/product/motion-upgrade-2026-11-12.md": "003ce4f3ec0abd3c9d6c0d5c4f7827f17f5ef3812326fa64b7210f667bf9f0d5",
+    "docs/design/motion-2026-11-12.md": "35708eb093ab09a64fbb84ced0538a0a075010249c064694fde51b86a805310d",
+    "docs/verification/motion-dev-2026-11-12.md": "0cf7907513fd637a2e9f617c69fa2cd7a7a1f7ffcd04d7eff4c87f4311f23492"
+  },
+  "changedSinceStart": [
+    "docs/product/motion-upgrade-2026-11-12.md"
+  ],
+  "sourceVsDevMismatch": [],
+  "sourceSha256": {
+    "lib/ui.dart": "cf6b834db19b6e2ed9252a2d97e11086162ea214e2cccc179e0aabc6246d7b89",
+    "lib/main.dart": "ffda6e1bb9979cf593991d102fadd0eabdad98894c49311da7f78c432a6cda5d",
+    "lib/theme.dart": "3e65d9479c2858e82329128fb93e5aeb5c14b89c75c3649fc678d7b69de625e6",
+    "lib/api.dart": "aab3a0b301d4853df6701806e1f64b7bb9061d8dd8f91c421d05a47c86f98039",
+    "test/app_test.dart": "67c9030e62ccf9b5b54bbe65c0eb50b63d15fd00d44c0d5e4a7543611504ea6f",
+    "server/.DS_Store": "59cbaaf58b78ffea5c76e82c47b06f09a2a4b6e58167229b8b8f1f6c922307dd",
+    "server/app.py": "ec20a653da19d81050e1a54ca39d40b443e96b431d7f851b01a964528a718376",
+    "server/extract.swift": "b55d1d0ebcc69eba703b42b1bfa9bd7c979ff864268328bcf5ce7d3ebdd1c2d1",
+    "server/test_app.py": "a2cdcec7935ee0e11f6ffc466d9cd497513e9966fd1238c70a03e1523d7de0ca",
+    "server/bin/extract": "4410999391363bd9e9e6ab8924698162e0be8d503ae1d75d2792acc3fce0b91c",
+    "test/motion_test.dart": "1e6aaf63e8d058ecfffcd2721c3cf842a474432d915a5aad8a5e678e7f47ab50"
+  },
+  "buildSha256": {
+    "build/ios/iphonesimulator/Runner.app/Runner": "6dae0e4c8f14aae36178ae41054e2a75e7ca45d6a01e267c324a96c9b3e1c75c",
+    "build/ios/iphonesimulator/Runner.app/Info.plist": "b35174a2af51f42131b6beb56f78461dfef0c75fb036f8fb9c75d38d2da5669c",
+    "build/ios/iphonesimulator/Runner.app/Frameworks/App.framework/flutter_assets/kernel_blob.bin": "863b24ec330a55ffb1d466656e7777b731b9eb15a63c099ab071e06f01c41883"
+  }
+}

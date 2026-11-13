@@ -1,0 +1,15 @@
+{
+  "capturedAt": "2026-11-12T12:51:12.676055+07:00",
+  "sha256": {
+    "lib/ui.dart": "c1b7e135cabdc089463b9d431c5b1c0de5851ce5a5dc86f6c019fa9cdbf1c995",
+    "lib/main.dart": "14afda1aa8f7c354c8b3e22817a27e75416549b9629b0c6f663aa767340b44ad",
+    "lib/theme.dart": "f17030ec723d3808e78866baf560b2d750d44bb6225759ffbf1694735c6ca67b",
+    "lib/api.dart": "aab3a0b301d4853df6701806e1f64b7bb9061d8dd8f91c421d05a47c86f98039",
+    "test/app_test.dart": "67c9030e62ccf9b5b54bbe65c0eb50b63d15fd00d44c0d5e4a7543611504ea6f",
+    "server/.DS_Store": "59cbaaf58b78ffea5c76e82c47b06f09a2a4b6e58167229b8b8f1f6c922307dd",
+    "server/app.py": "ec20a653da19d81050e1a54ca39d40b443e96b431d7f851b01a964528a718376",
+    "server/extract.swift": "b55d1d0ebcc69eba703b42b1bfa9bd7c979ff864268328bcf5ce7d3ebdd1c2d1",
+    "server/test_app.py": "a2cdcec7935ee0e11f6ffc466d9cd497513e9966fd1238c70a03e1523d7de0ca",
+    "server/bin/extract": "4410999391363bd9e9e6ab8924698162e0be8d503ae1d75d2792acc3fce0b91c"
+  }
+}
