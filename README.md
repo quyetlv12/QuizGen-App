@@ -1,3 +1,20 @@
+## Chạy nhanh trên iOS
+
+Từ thư mục dự án:
+
+```sh
+./dev     # Chạy debug trên máy ảo iOS, tự bật backend nếu cần.
+./build   # Build release, cài và mở app trên iPhone thật với URL ngrok cố định.
+```
+
+Dừng `./dev` bằng Ctrl+C trước khi chạy `./build`; các lệnh dùng chung khóa để tránh Xcode build đồng thời.
+
+Kết nối iPhone, mở khóa và chọn tin cậy Mac trước khi chạy `./build`. Hai lệnh tự chọn thiết bị iOS đầu tiên phù hợp. `./build` kiểm tra tunnel và tự bật nếu chưa chạy; giữ terminal và Mac thức để app dùng backend. Nếu cổng 8787 đang có backend riêng nhưng tunnel chưa chạy, dừng backend riêng trước rồi chạy lại. API AI Cockpit cần đang hoạt động theo cấu hình hiện có.
+
+`./dev` chạy debug với hot reload tắt vì Flutter hiện tại vẫn ghi một phần cache hot reload vào `build/`. Chạy lại lệnh sau khi sửa code. Máy này thiếu ứng dụng Simulator trong Xcode; lệnh vẫn cài/chạy được trên simulator đã boot, nhưng cần khôi phục ứng dụng Simulator để xem cửa sổ.
+
+Flutter sử dụng cấu hình riêng trong `.local/flutter-config` và xuất artifact vào `.flutter-build/`, vì tên `build` được dùng cho lệnh. Khi gọi Flutter thủ công trong dự án, chạy `source scripts/flutter-env.sh` sau khi đặt `ROOT="$PWD"` để dùng cùng cấu hình.
+
 # QuizMind AI
 
 Ứng dụng Flutter biến tài liệu thành bài trắc nghiệm tiếng Việt. Bản đầu dành cho một người dùng, chạy cùng dịch vụ local trên Mac.
@@ -5,6 +22,7 @@
 ## Chức năng hiện có
 
 - Nhập PDF, TXT/MD UTF-8, JPG/PNG; chọn ảnh từ thư viện hoặc chụp bằng camera trên mobile.
+- Chat với AI qua nút robot nổi ở góc phải các tab chính: mô tả chủ đề, chọn 5/10/15 câu, theo dõi tác vụ và mở bộ đề khi hoàn tất. Nội dung AI tạo được lưu trong thư viện và có nhãn riêng ở phần giải thích.
 - Xem lại và sắp xếp ảnh trước khi gửi, kiểm tra chữ đã đọc trước khi tạo đề.
 - OCR trên Mac bằng PDFKit/Vision, hỗ trợ nhận dạng tiếng Việt và tiếng Anh.
 - Đặt tên tài liệu bắt buộc; nhập số câu từ 1–100 hoặc chọn nhanh 5/10/15. AI có thể trả ít câu hơn nếu nguồn ngắn.

@@ -7,6 +7,8 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:quizmind/api.dart';
 import 'package:quizmind/main.dart';
+import 'package:quizmind/ui.dart';
+import 'package:quizmind/theme.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 const stateBody = '{"documents":[],"quizzes":[],"jobs":[],"attempts":[]}';
@@ -15,6 +17,243 @@ final tokenB = List.filled(43, 'B').join();
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  testWidgets('chat suggestions prepare the selected count without sending', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    var requests = 0;
+    final c = AppController(
+      await SharedPreferences.getInstance(),
+      api: LocalApi(
+        'http://127.0.0.1:8787',
+        client: MockClient((request) async {
+          requests++;
+          return http.Response(stateBody, 200);
+        }),
+      ),
+    );
+    addTearDown(c.dispose);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    for (final size in [
+      const Size(393, 852),
+      const Size(1280, 900),
+      const Size(320, 740),
+    ]) {
+      tester.view.physicalSize = size;
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: appTheme(),
+          builder: (context, child) => MediaQuery(
+            data: MediaQuery.of(context).copyWith(
+              textScaler: TextScaler.linear(size.width == 320 ? 1.25 : 1),
+            ),
+            child: child!,
+          ),
+          home: ChatScreen(c: c),
+        ),
+      );
+      await tester.scrollUntilVisible(
+        find.text('15 câu'),
+        160,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.tap(find.text('15 câu'));
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(
+        find.byKey(const ValueKey('Sinh học lớp 9')),
+        160,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.tap(find.byKey(const ValueKey('Sinh học lớp 9')));
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<TextField>(find.byType(TextField)).controller!.text,
+        'Tạo 15 câu Sinh học lớp 9 về hệ hô hấp',
+      );
+      expect(requests, 0);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+    }
+  });
+
+  testWidgets(
+    'chat composer stays above the keyboard at narrow and wide sizes',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      final c = AppController(await SharedPreferences.getInstance());
+      addTearDown(c.dispose);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      for (final size in [
+        const Size(393, 852),
+        const Size(1280, 900),
+        const Size(852, 393),
+      ]) {
+        tester.view.physicalSize = size;
+        tester.view.viewInsets = const FakeViewPadding();
+        await tester.pumpWidget(MaterialApp(home: ChatScreen(c: c)));
+        await tester.tap(find.byType(TextField));
+        tester.view.viewInsets = FakeViewPadding(
+          bottom: size.height < 500 ? 180 : 320,
+        );
+        await tester.pumpAndSettle();
+        final keyboardTop = size.height - tester.view.viewInsets.bottom;
+        expect(
+          tester.getRect(find.byType(TextField)).bottom,
+          lessThanOrEqualTo(keyboardTop),
+        );
+        expect(
+          tester.getRect(find.byTooltip('Gửi yêu cầu')).bottom,
+          lessThanOrEqualTo(keyboardTop),
+        );
+        expect(
+          tester.getRect(find.byType(TextField)).top,
+          greaterThanOrEqualTo(0),
+        );
+        await tester.enterText(
+          find.byType(TextField),
+          'Tạo bộ đề Toán lớp 6\nvề phân số\nvà số thập phân',
+        );
+        await tester.pumpAndSettle();
+        expect(
+          tester.getRect(find.byType(TextField)).bottom,
+          lessThanOrEqualTo(keyboardTop),
+        );
+        expect(tester.takeException(), isNull);
+        tester.view.viewInsets = const FakeViewPadding();
+        await tester.pumpAndSettle();
+        expect(
+          tester.getRect(find.byType(TextField)).bottom,
+          greaterThan(keyboardTop),
+        );
+      }
+    },
+  );
+
+  testWidgets('floating bot stays fixed on main tabs and opens chat', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    final c = AppController(await SharedPreferences.getInstance());
+    addTearDown(c.dispose);
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(393, 852);
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(MaterialApp(home: HomeScreen(c: c)));
+    await tester.pumpAndSettle();
+    final bot = find.byType(FloatingActionButton);
+    final original = tester.getRect(bot);
+    expect(original.right, closeTo(393 - 16, 1));
+    expect(find.text('Chat với AI để tạo bộ đề'), findsNothing);
+    await tester.drag(find.byType(ListView).first, const Offset(0, -300));
+    await tester.pumpAndSettle();
+    expect(tester.getRect(bot), original);
+    expect(
+      original.bottom,
+      lessThan(tester.getRect(find.byType(StudyNavigation)).top),
+    );
+    for (final tab in ['Tài liệu', 'Bộ đề', 'Cá nhân']) {
+      final target = find.descendant(
+        of: find.byType(StudyNavigation),
+        matching: find.text(tab),
+      );
+      expect(target, findsOneWidget);
+      await tester.tap(target);
+      await tester.pumpAndSettle();
+      expect(tester.getRect(bot), original);
+    }
+    await tester.tap(bot);
+    await tester.pumpAndSettle();
+    expect(find.byType(ChatScreen), findsOneWidget);
+    expect(find.byType(FloatingActionButton), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+    'chat validates prompt, blocks duplicate sends and opens generated quiz',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      Json? submitted;
+      var posts = 0;
+      var stage = 'generating';
+      final quiz = <String, dynamic>{
+        'id': 'chat-quiz',
+        'documentId': 'chat-doc',
+        'title': 'Bộ đề từ chat',
+        'questions': [
+          {
+            'question': 'Cơ quan nào trao đổi khí?',
+            'options': ['Phổi', 'Tim', 'Gan', 'Dạ dày'],
+            'correct': 0,
+            'explanation': 'Phổi thực hiện trao đổi khí.',
+          },
+        ],
+      };
+      final c = AppController(
+        await SharedPreferences.getInstance(),
+        api: LocalApi(
+          'https://relay.example',
+          token: tokenA,
+          client: MockClient((request) async {
+            if (request.method == 'POST') {
+              posts++;
+              submitted = jsonDecode(request.body) as Json;
+              return http.Response('{"id":"chat-job","stage":"queued"}', 202);
+            }
+            return http.Response.bytes(
+              utf8.encode(
+                jsonEncode({
+                  'documents': [],
+                  'attempts': [],
+                  'quizzes': stage == 'ready' ? [quiz] : [],
+                  'jobs': submitted == null
+                      ? []
+                      : [
+                          {
+                            'id': 'chat-job',
+                            'requestId': submitted!['requestId'],
+                            'name': 'Bộ đề từ chat',
+                            'stage': stage,
+                            'quizId': 'chat-quiz',
+                          },
+                        ],
+                }),
+              ),
+              200,
+            );
+          }),
+        ),
+      );
+      await tester.pumpWidget(MaterialApp(home: ChatScreen(c: c)));
+      await tester.enterText(find.byType(TextField), 'ngắn');
+      await tester.tap(find.byTooltip('Gửi yêu cầu'));
+      await tester.pump();
+      expect(posts, 0);
+      await tester.enterText(
+        find.byType(TextField),
+        'Tạo đề Sinh học lớp 9 về hô hấp',
+      );
+      await tester.tap(find.byTooltip('Gửi yêu cầu'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(posts, 1);
+      expect(submitted?['count'], 10);
+      expect(find.text('AI đang xử lý…'), findsOneWidget);
+      expect(tester.widget<TextField>(find.byType(TextField)).enabled, isFalse);
+      stage = 'ready';
+      await c.refresh();
+      await tester.pumpAndSettle();
+      expect(find.text('Mở bộ đề'), findsOneWidget);
+      expect(tester.widget<TextField>(find.byType(TextField)).enabled, isTrue);
+      await tester.tap(find.text('Mở bộ đề'));
+      await tester.pumpAndSettle();
+      expect(find.byType(QuizScreen), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    },
+  );
 
   test('HTTPS defaults to port 443, HTTP is confined to explicit loopback', () {
     for (final value in [
@@ -182,6 +421,49 @@ void main() {
     expect(calls, 2);
     c.dispose();
   });
+
+  test(
+    'send waits for a fresh snapshot after an overlapping refresh',
+    () async {
+      SharedPreferences.setMockInitialValues({});
+      final oldSnapshot = Completer<http.Response>();
+      final posted = Completer<void>();
+      var reads = 0;
+      final c = AppController(
+        await SharedPreferences.getInstance(),
+        api: LocalApi(
+          'https://relay.example',
+          client: MockClient((request) async {
+            if (request.method == 'POST') {
+              posted.complete();
+              return http.Response('{"id":"new","stage":"queued"}', 202);
+            }
+            if (++reads == 1) return oldSnapshot.future;
+            return http.Response(
+              jsonEncode({
+                'documents': [],
+                'quizzes': [],
+                'attempts': [],
+                'jobs': [
+                  {'id': 'new', 'stage': 'generating', 'name': 'Test'},
+                ],
+              }),
+              200,
+            );
+          }),
+        ),
+      );
+      addTearDown(c.dispose);
+      final refreshing = c.refresh();
+      final sending = c.send('/api/generate', {});
+      await posted.future;
+      oldSnapshot.complete(http.Response(stateBody, 200));
+      await refreshing;
+      await sending;
+      expect(reads, 2);
+      expect(c.items('jobs').single['stage'], 'generating');
+    },
+  );
 
   test('job completion creates a one-shot notice after initial state load', () async {
     SharedPreferences.setMockInitialValues({});

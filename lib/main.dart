@@ -76,9 +76,16 @@ Widget gap([double size = 20]) => SizedBox(height: size);
 class PageBody extends StatelessWidget {
   final List<Widget> children;
   final ScrollController? controller;
-  const PageBody({super.key, required this.children, this.controller});
+  final bool behindNavigation;
+  const PageBody({
+    super.key,
+    required this.children,
+    this.controller,
+    this.behindNavigation = false,
+  });
   @override
   Widget build(BuildContext context) => SafeArea(
+    bottom: !behindNavigation,
     child: Align(
       alignment: Alignment.topCenter,
       child: ConstrainedBox(
@@ -86,7 +93,12 @@ class PageBody extends StatelessWidget {
         child: ListView(
           controller: controller,
           primary: false,
-          padding: const EdgeInsets.fromLTRB(18, 16, 18, 28),
+          padding: EdgeInsets.fromLTRB(
+            18,
+            16,
+            18,
+            28 + (behindNavigation ? MediaQuery.paddingOf(context).bottom : 0),
+          ),
           children: children,
         ),
       ),
@@ -352,42 +364,6 @@ class _HomeScreenState extends State<HomeScreen> {
                     color: Colors.white,
                     size: 25,
                   ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-      gap(10),
-      panel(
-        Material(
-          color: Colors.transparent,
-          child: InkWell(
-            borderRadius: BorderRadius.circular(16),
-            onTap: () => openScreen(context, ChatScreen(c: c)),
-            child: const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 14, vertical: 13),
-              child: Row(
-                children: [
-                  MintIcon(Icons.forum_outlined),
-                  SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Chat với AI để tạo bộ đề',
-                          style: TextStyle(fontWeight: FontWeight.w700),
-                        ),
-                        SizedBox(height: 3),
-                        Text(
-                          'Mô tả chủ đề, AI sẽ tạo câu hỏi ngay trên app.',
-                          style: TextStyle(fontSize: 12, color: muted),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Icon(Icons.chevron_right, color: green),
                 ],
               ),
             ),
@@ -745,6 +721,7 @@ class _HomeScreenState extends State<HomeScreen> {
         });
       }
       return Scaffold(
+        extendBody: true,
         appBar: BrandBar(onNotifications: showNotifications),
         body: Column(
           children: [
@@ -762,17 +739,34 @@ class _HomeScreenState extends State<HomeScreen> {
               child: SmoothTabBody(
                 index: tab,
                 children: [
-                  PageBody(children: home()),
-                  PageBody(children: library()),
-                  PageBody(children: quizzes()),
-                  PageBody(children: profile()),
+                  PageBody(
+                    behindNavigation: true,
+                    children: [...home(), gap(72)],
+                  ),
+                  PageBody(
+                    behindNavigation: true,
+                    children: [...library(), gap(72)],
+                  ),
+                  PageBody(
+                    behindNavigation: true,
+                    children: [...quizzes(), gap(72)],
+                  ),
+                  PageBody(
+                    behindNavigation: true,
+                    children: [...profile(), gap(72)],
+                  ),
                 ],
               ),
             ),
           ],
         ),
+        floatingActionButton: AiChatLauncher(
+          onPressed: () => openScreen(context, ChatScreen(c: c)),
+        ),
         bottomNavigationBar: StudyNavigation(
           selected: tab,
+          onScan: () =>
+              openScreen(context, ImportScreen(c: c, startWithScanner: true)),
           onChanged: (v) => setState(() => tab = v),
         ),
       );
@@ -797,16 +791,13 @@ class ChatScreen extends StatefulWidget {
 
 class _ChatScreenState extends State<ChatScreen> {
   final input = TextEditingController();
-  final messages = <({bool user, String text})>[
-    (
-      user: false,
-      text: 'Chào bạn! Hãy mô tả chủ đề và số câu muốn tạo, ví dụ: “Tạo 10 câu Sinh học lớp 9 về hệ hô hấp”.',
-    ),
-  ];
+  final messages = <({bool user, String text})>[];
   int count = 10;
   String? requestId;
   bool sending = false;
-  int get generation => widget.c.connectionGeneration;
+  late final int generation = widget.c.connectionGeneration;
+  bool get busy =>
+      sending || (job != null && !['ready', 'failed'].contains(job!['stage']));
 
   @override
   void dispose() {
@@ -825,7 +816,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<void> send() async {
     final prompt = input.text.trim();
-    if (sending || prompt.length < 10) {
+    if (busy || prompt.length < 10) {
       if (prompt.isNotEmpty && prompt.length < 10) {
         errorMessage(context, 'Hãy mô tả yêu cầu ít nhất 10 ký tự.');
       }
@@ -856,6 +847,8 @@ class _ChatScreenState extends State<ChatScreen> {
           messages.add((user: false, text: 'Mình chưa thể gửi yêu cầu: $e'));
         });
       }
+    } finally {
+      if (mounted) setState(() => sending = false);
     }
   }
 
@@ -873,18 +866,99 @@ class _ChatScreenState extends State<ChatScreen> {
     listenable: widget.c,
     builder: (context, _) {
       final current = job;
-      if (current?['stage'] == 'ready') sending = false;
-      if (current?['stage'] == 'failed') sending = false;
+      final isBusy = busy;
       return Scaffold(
         body: PageBody(
           children: [
-            const PageTitle('Chat với AI'),
+            const PageTitle(
+              'Chat với AI',
+              trailing: MintIcon(Icons.school_rounded, size: 48),
+            ),
             gap(8),
             const Text(
               'Mô tả chủ đề, lớp học và số câu. AI sẽ tạo bộ đề để bạn làm ngay.',
               style: TextStyle(color: muted),
             ),
-            gap(16),
+            if (messages.isEmpty) ...[gap(20), const _ChatWelcome()],
+            gap(22),
+            const _ChatHeading('Số câu hỏi', Icons.layers_outlined),
+            gap(10),
+            Row(
+              children: [
+                for (final n in [5, 10, 15]) ...[
+                  if (n != 5) const SizedBox(width: 8),
+                  Expanded(
+                    child: ChoicePill(
+                      '$n câu',
+                      icon: count == n ? Icons.check_circle_rounded : null,
+                      selected: count == n,
+                      onTap: isBusy ? null : () => setState(() => count = n),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+            if (messages.isEmpty) ...[
+              gap(24),
+              const _ChatHeading('Gợi ý câu lệnh', Icons.auto_awesome_rounded),
+              gap(6),
+              const Text(
+                'Chọn một gợi ý hoặc nhập câu lệnh của riêng bạn.',
+                style: TextStyle(color: muted),
+              ),
+              gap(14),
+              LayoutBuilder(
+                builder: (context, constraints) => Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final suggestion in const [
+                      (
+                        label: 'Toán lớp 6',
+                        icon: Icons.calculate_rounded,
+                        topic: 'Toán lớp 6 về phân số',
+                      ),
+                      (
+                        label: 'Sinh học lớp 9',
+                        icon: Icons.eco_rounded,
+                        topic: 'Sinh học lớp 9 về hệ hô hấp',
+                      ),
+                      (
+                        label: 'Lịch sử lớp 8',
+                        icon: Icons.account_balance_rounded,
+                        topic: 'Lịch sử lớp 8 về cách mạng công nghiệp',
+                      ),
+                    ])
+                      SizedBox(
+                        width:
+                            constraints.maxWidth < 350 ||
+                                MediaQuery.textScalerOf(context).scale(14) > 17
+                            ? constraints.maxWidth
+                            : (constraints.maxWidth - 16) / 3,
+                        child: _ChatSuggestion(
+                          label: suggestion.label,
+                          icon: suggestion.icon,
+                          onTap: isBusy
+                              ? null
+                              : () {
+                                  final text =
+                                      'Tạo $count câu ${suggestion.topic}';
+                                  input.value = TextEditingValue(
+                                    text: text,
+                                    selection: TextSelection.collapsed(
+                                      offset: text.length,
+                                    ),
+                                  );
+                                },
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              gap(22),
+              const _ChatTips(),
+            ],
+            gap(18),
             ...messages.map(
               (message) => Align(
                 alignment: message.user
@@ -944,66 +1018,270 @@ class _ChatScreenState extends State<ChatScreen> {
                   ],
                 ),
               ),
-            if (sending) ...[
-              gap(12),
-              const Row(
-                children: [
-                  SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-                  SizedBox(width: 10),
-                  Text('AI đang xử lý…'),
-                ],
-              ),
-            ],
-            gap(18),
-            const SectionTitle('Số câu hỏi', icon: Icons.help_outline_rounded),
-            gap(8),
-            Row(
-              children: [
-                for (final n in [5, 10, 15]) ...[
-                  if (n != 5) const SizedBox(width: 8),
-                  Expanded(
-                    child: ChoicePill(
-                      '$n câu',
-                      selected: count == n,
-                      onTap: sending ? null : () => setState(() => count = n),
-                    ),
-                  ),
-                ],
-              ],
-            ),
+            if (isBusy) ...[gap(12), const AiThinkingIndicator()],
           ],
         ),
-        bottomNavigationBar: BottomActions(
-          child: Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: input,
-                  enabled: !sending,
-                  minLines: 1,
-                  maxLines: 3,
-                  textInputAction: TextInputAction.send,
-                  onSubmitted: (_) => send(),
-                  decoration: const InputDecoration(
-                    hintText: 'Ví dụ: Tạo đề Toán lớp 6…',
+        bottomNavigationBar: Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.viewInsetsOf(context).bottom,
+          ),
+          child: SafeArea(
+            top: false,
+            child: Center(
+              heightFactor: 1,
+              child: Container(
+                constraints: const BoxConstraints(maxWidth: 720),
+                padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
+                decoration: BoxDecoration(
+                  color: mint,
+                  border: Border.all(color: line),
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(28),
                   ),
                 ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: input,
+                        enabled: !isBusy,
+                        maxLength: 4000,
+                        minLines: 1,
+                        maxLines: 3,
+                        textInputAction: TextInputAction.send,
+                        onSubmitted: (_) => send(),
+                        buildCounter: (
+                          context, {
+                          required currentLength,
+                          required isFocused,
+                          maxLength,
+                        }) => null,
+                        decoration: InputDecoration(
+                          hintText: 'Ví dụ: Tạo đề Toán lớp 6…',
+                          hintStyle: const TextStyle(
+                            fontSize: 14,
+                            color: muted,
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 14,
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(28),
+                            borderSide: const BorderSide(color: green),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(28),
+                            borderSide: const BorderSide(
+                              color: green,
+                              width: 1.5,
+                            ),
+                          ),
+                          suffixIcon: ValueListenableBuilder(
+                            valueListenable: input,
+                            builder: (context, value, _) => Padding(
+                              padding: const EdgeInsets.only(right: 12),
+                              child: Text(
+                                '${value.text.characters.length}/4000',
+                                style: const TextStyle(
+                                  color: muted,
+                                  fontSize: 11,
+                                ),
+                              ),
+                            ),
+                          ),
+                          suffixIconConstraints: const BoxConstraints(
+                            minWidth: 46,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    IconButton.filled(
+                      onPressed: isBusy ? null : send,
+                      style: IconButton.styleFrom(
+                        backgroundColor: green,
+                        foregroundColor: Colors.white,
+                        minimumSize: const Size(48, 48),
+                      ),
+                      icon: const Icon(Icons.send_rounded),
+                      tooltip: 'Gửi yêu cầu',
+                    ),
+                  ],
+                ),
               ),
-              const SizedBox(width: 10),
-              IconButton.filled(
-                onPressed: sending ? null : send,
-                icon: const Icon(Icons.send_rounded),
-                tooltip: 'Gửi yêu cầu',
-              ),
-            ],
+            ),
           ),
         ),
       );
     },
+  );
+}
+
+class _ChatHeading extends StatelessWidget {
+  final String title;
+  final IconData icon;
+  const _ChatHeading(this.title, this.icon);
+  @override
+  Widget build(BuildContext context) => Row(
+    children: [
+      MintIcon(icon, size: 32),
+      const SizedBox(width: 10),
+      Expanded(
+        child: Text(title, style: Theme.of(context).textTheme.titleLarge),
+      ),
+    ],
+  );
+}
+
+class _ChatWelcome extends StatelessWidget {
+  const _ChatWelcome();
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+    decoration: BoxDecoration(
+      gradient: const LinearGradient(colors: [mint, Color(0xFFDDF8E4)]),
+      borderRadius: BorderRadius.circular(22),
+    ),
+    child: Row(
+      children: [
+        const RobotArt(size: 96),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Container(
+            padding: const EdgeInsets.only(left: 12),
+            decoration: const BoxDecoration(
+              border: Border(left: BorderSide(color: line)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Chào bạn! 👋',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+                gap(6),
+                const Text(
+                  'Hãy mô tả chủ đề và số câu muốn tạo, ví dụ: “Tạo 10 câu Sinh học lớp 9 về hệ hô hấp”.',
+                  style: TextStyle(height: 1.4),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+class _ChatSuggestion extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final VoidCallback? onTap;
+  const _ChatSuggestion({
+    required this.label,
+    required this.icon,
+    required this.onTap,
+  });
+  @override
+  Widget build(BuildContext context) => Material(
+    color: mint,
+    shape: RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(16),
+      side: const BorderSide(color: line),
+    ),
+    clipBehavior: Clip.antiAlias,
+    child: InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 14),
+        child: Row(
+          children: [
+            Icon(icon, color: green, size: 22),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                label.replaceAll('lớp ', 'lớp\u00a0'),
+                key: ValueKey(label),
+                style: const TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 13,
+                  height: 1.3,
+                ),
+              ),
+            ),
+            if (MediaQuery.sizeOf(context).width >= 600)
+              const Icon(Icons.chevron_right_rounded, size: 18, color: green),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+class _ChatTips extends StatelessWidget {
+  const _ChatTips();
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.all(16),
+    decoration: BoxDecoration(
+      color: mint,
+      border: Border.all(color: line),
+      borderRadius: BorderRadius.circular(22),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const _ChatHeading('Mẹo nhập đề bài', Icons.lightbulb_outline_rounded),
+        gap(12),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  for (final tip in const [
+                    'Nêu rõ môn học, lớp học và chủ đề.',
+                    'Chỉ định số câu hỏi bạn mong muốn.',
+                    'Ví dụ: “Tạo 10 câu Vật lý lớp 8 về áp suất”, “Tạo 15 câu Tiếng Anh lớp 7 về thì hiện tại đơn”.',
+                  ])
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            '•  ',
+                            style: TextStyle(
+                              color: green,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          Expanded(
+                            child: Text(
+                              tip,
+                              style: const TextStyle(height: 1.4),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            if (MediaQuery.sizeOf(context).width >= 380) ...[
+              const SizedBox(width: 8),
+              const Padding(
+                padding: EdgeInsets.only(top: 16),
+                child: Icon(Icons.fact_check_rounded, size: 56, color: green),
+              ),
+            ],
+          ],
+        ),
+      ],
+    ),
   );
 }
 
@@ -1091,7 +1369,14 @@ class _ImportEmptyCard extends StatelessWidget {
 
 class ImportScreen extends StatefulWidget {
   final AppController c;
-  const ImportScreen({super.key, required this.c});
+  final bool startWithScanner;
+  final Json? document;
+  const ImportScreen({
+    super.key,
+    required this.c,
+    this.startWithScanner = false,
+    this.document,
+  });
   @override
   State<ImportScreen> createState() => _ImportScreenState();
 }
@@ -1103,6 +1388,18 @@ class _ImportScreenState extends State<ImportScreen> {
   void initState() {
     super.initState();
     generation = widget.c.connectionGeneration;
+    title.text = widget.document?['name'] as String? ?? '';
+    if (widget.startWithScanner) {
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        if (!mounted) return;
+        await Navigator.of(context).push<void>(
+          AppPageRoute<void>(
+            builder: (_) => ScanScreen(onPhoto: photo, onCapture: addPhoto),
+          ),
+        );
+        if (mounted && files.isEmpty) Navigator.pop(context);
+      });
+    }
   }
 
   final title = TextEditingController();
@@ -1188,14 +1485,21 @@ class _ImportScreenState extends State<ImportScreen> {
     }
     setState(() => busy = true);
     try {
-      await widget.c.send('/api/import', {
-        'requestId': requestId,
-        'name': title.text.trim(),
-        'files': files
-            .map((f) => {'name': f.name, 'data': base64Encode(f.bytes)})
-            .toList(),
-      }, expectedGeneration: generation);
-      if (mounted) Navigator.pop(context);
+      await widget.c.send(
+        widget.document == null ? '/api/import' : '/api/update',
+        {
+          if (widget.document != null) 'documentId': widget.document!['id'],
+          'requestId': requestId,
+          'name': title.text.trim(),
+          'files': files
+              .map((f) => {'name': f.name, 'data': base64Encode(f.bytes)})
+              .toList(),
+        },
+        expectedGeneration: generation,
+      );
+      if (mounted) {
+        Navigator.pop(context, widget.document != null ? true : null);
+      }
     } catch (e) {
       if (mounted) errorMessage(context, e);
     } finally {
@@ -1217,7 +1521,16 @@ class _ImportScreenState extends State<ImportScreen> {
       child: PageBody(
         controller: scroll,
         children: [
-          const PageTitle('Thêm tài liệu'),
+          PageTitle(
+            widget.document == null ? 'Thêm tài liệu' : 'Cập nhật tài liệu',
+          ),
+          if (widget.document != null) ...[
+            gap(12),
+            const Text(
+              'Chọn file hoặc quét lại để thay nội dung. Bản cũ được giữ nếu đọc thất bại. Các bộ đề và kết quả đã có vẫn được giữ.',
+              style: TextStyle(fontSize: 14, color: muted),
+            ),
+          ],
           gap(16),
           if (files.isNotEmpty) ...[
             TextFormField(
@@ -1241,7 +1554,7 @@ class _ImportScreenState extends State<ImportScreen> {
               gradient: greenGradient,
               borderRadius: BorderRadius.circular(18),
             ),
-            child: const Row(
+            child: Row(
               children: [
                 Expanded(
                   child: Column(
@@ -1253,7 +1566,9 @@ class _ImportScreenState extends State<ImportScreen> {
                           alignment: Alignment.centerLeft,
                           fit: BoxFit.scaleDown,
                           child: Text(
-                            'Tạo trắc nghiệm AI',
+                            widget.document == null
+                                ? 'Tạo trắc nghiệm AI'
+                                : 'Cập nhật nguồn tài liệu',
                             maxLines: 1,
                             softWrap: false,
                             style: TextStyle(
@@ -1266,7 +1581,9 @@ class _ImportScreenState extends State<ImportScreen> {
                       ),
                       SizedBox(height: 9),
                       Text(
-                        'Tải tài liệu lên, AI sẽ đọc và tạo câu hỏi cho bạn.',
+                        widget.document == null
+                            ? 'Tải tài liệu lên, AI sẽ đọc và tạo câu hỏi cho bạn.'
+                            : 'Đọc bản mới để tạo bộ đề tiếp theo từ nội dung đã cập nhật.',
                         style: TextStyle(
                           color: Colors.white,
                           fontSize: 15,
@@ -1417,7 +1734,13 @@ class _ImportScreenState extends State<ImportScreen> {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   : const Icon(Icons.text_snippet_outlined),
-              label: Text(busy ? 'Đang gửi…' : 'Đọc nội dung tài liệu'),
+              label: Text(
+                busy
+                    ? 'Đang gửi…'
+                    : widget.document == null
+                    ? 'Đọc nội dung tài liệu'
+                    : 'Đọc và cập nhật tài liệu',
+              ),
             ),
           ] else
             const _ImportEmptyCard(),
@@ -1458,6 +1781,7 @@ class _DocumentScreenState extends State<DocumentScreen> {
   final formKey = GlobalKey<FormState>();
   late final TextEditingController title;
   final questionCount = TextEditingController(text: '5');
+  final instructions = TextEditingController();
   late final int generation;
   @override
   void initState() {
@@ -1470,6 +1794,7 @@ class _DocumentScreenState extends State<DocumentScreen> {
   void dispose() {
     title.dispose();
     questionCount.dispose();
+    instructions.dispose();
     super.dispose();
   }
 
@@ -1491,6 +1816,7 @@ class _DocumentScreenState extends State<DocumentScreen> {
         'documentId': widget.document['id'],
         'name': title.text.trim(),
         'count': count,
+        'instructions': instructions.text.trim(),
       }, expectedGeneration: generation);
       if (mounted) Navigator.pop(context);
     } catch (e) {
@@ -1498,6 +1824,16 @@ class _DocumentScreenState extends State<DocumentScreen> {
     } finally {
       if (mounted) setState(() => busy = false);
     }
+  }
+
+  Future<void> updateDocument() async {
+    final accepted = await Navigator.of(context).push<bool>(
+      AppPageRoute<bool>(
+        builder: (_) => ImportScreen(c: widget.c, document: widget.document),
+      ),
+    );
+    // Return to the task list while extraction runs, avoiding a stale source.
+    if (accepted == true && mounted) Navigator.pop(context);
   }
 
   Future<void> hide() async {
@@ -1564,6 +1900,14 @@ class _DocumentScreenState extends State<DocumentScreen> {
               ),
             ),
             gap(12),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: busy ? null : updateDocument,
+                icon: const Icon(Icons.upload_file_outlined),
+                label: const Text('Cập nhật tài liệu'),
+              ),
+            ),
             TextFormField(
               key: const ValueKey('generate-document-name'),
               controller: title,
@@ -1618,6 +1962,26 @@ class _DocumentScreenState extends State<DocumentScreen> {
                     onChanged: (_) => setState(() => requestId = newId()),
                   ),
                 ],
+              ),
+            ),
+            gap(10),
+            TextFormField(
+              key: const ValueKey('generate-instructions'),
+              controller: instructions,
+              enabled: !busy,
+              minLines: 3,
+              maxLines: 5,
+              maxLength: 2000,
+              keyboardType: TextInputType.multiline,
+              textCapitalization: TextCapitalization.sentences,
+              onChanged: (_) => requestId = newId(),
+              decoration: const InputDecoration(
+                labelText: 'Yêu cầu thêm cho AI (tùy chọn)',
+                alignLabelWithHint: true,
+                hintText:
+                    'Ví dụ: Tập trung vào ngữ pháp, ưu tiên câu hỏi vận dụng.',
+                helperText: 'Để trống để AI tự chọn nội dung trong tài liệu.',
+                helperMaxLines: 2,
               ),
             ),
             gap(10),
@@ -2376,7 +2740,9 @@ class _ResultScreenState extends State<ResultScreen> {
     final percent = (score / total * 100).round();
     final duration = widget.c.prefs.getInt('duration-${attempt['id']}');
     return Scaffold(
+      extendBody: true,
       body: PageBody(
+        behindNavigation: true,
         children: [
           const PageTitle('Kết quả'),
           gap(18),
@@ -2599,6 +2965,10 @@ class _ResultScreenState extends State<ResultScreen> {
       ),
       bottomNavigationBar: StudyNavigation(
         selected: 0,
+        onScan: () => openScreen(
+          context,
+          ImportScreen(c: widget.c, startWithScanner: true),
+        ),
         onChanged: (tab) => Navigator.pushAndRemoveUntil(
           context,
           AppPageRoute<void>(
@@ -2655,7 +3025,9 @@ class _ResultScreenState extends State<ResultScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'NGUỒN · TRANG ${q['page']}',
+                  q['sourceType'] == 'ai'
+                      ? 'NỘI DUNG DO AI TẠO'
+                      : 'NGUỒN · TRANG ${q['page']}',
                   style: const TextStyle(
                     fontSize: 11,
                     color: green,
@@ -2664,7 +3036,7 @@ class _ResultScreenState extends State<ResultScreen> {
                 ),
                 gap(6),
                 SelectableText(
-                  '“${q['quote']}”',
+                  q['sourceType'] == 'ai' ? q['quote'] : '“${q['quote']}”',
                   style: const TextStyle(fontSize: 14, height: 1.5),
                 ),
               ],

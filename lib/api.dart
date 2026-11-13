@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'task_progress.dart';
+
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -113,6 +115,8 @@ class JobNotice {
 
 class AppController extends ChangeNotifier {
   final SharedPreferences prefs;
+  final TaskProgress taskProgress;
+  final Map<Object, String> _pendingActions = {};
   late final LocalApi api;
   Json state = {'documents': [], 'quizzes': [], 'jobs': [], 'attempts': []};
   bool connected = false, refreshing = false, closed = false;
@@ -121,9 +125,11 @@ class AppController extends ChangeNotifier {
   int connectionGeneration = 0;
   bool authenticationRequired = false;
   int? _refreshGeneration;
+  Completer<void>? _refreshDone;
   JobNotice? _jobNotice;
   bool _hasLoadedState = false;
-  AppController(this.prefs, {LocalApi? api}) {
+  AppController(this.prefs, {LocalApi? api, TaskProgress? taskProgress})
+    : taskProgress = taskProgress ?? TaskProgress() {
     this.api =
         api ??
         LocalApi(
@@ -138,6 +144,18 @@ class AppController extends ChangeNotifier {
     final notice = _jobNotice;
     _jobNotice = null;
     return notice;
+  }
+
+  void _syncProgress({bool failed = false, bool reset = false}) {
+    unawaited(
+      taskProgress.sync(
+        items('jobs'),
+        _pendingActions.values,
+        offline: !connected,
+        failed: failed,
+        reset: reset,
+      ),
+    );
   }
 
   void start() {
@@ -155,6 +173,8 @@ class AppController extends ChangeNotifier {
     refreshing = true;
     final generation = connectionGeneration;
     _refreshGeneration = generation;
+    final done = Completer<void>();
+    _refreshDone = done;
     try {
       final nextState = await api.request('/api/state');
       if (generation != connectionGeneration || closed) return;
@@ -187,10 +207,15 @@ class AppController extends ChangeNotifier {
         timer?.cancel();
       }
     } finally {
+      done.complete();
+      if (identical(_refreshDone, done)) _refreshDone = null;
       if (generation == connectionGeneration) {
         _refreshGeneration = null;
         refreshing = false;
-        if (!closed) notifyListeners();
+        if (!closed) {
+          _syncProgress();
+          notifyListeners();
+        }
       }
     }
   }
@@ -201,10 +226,23 @@ class AppController extends ChangeNotifier {
         (expectedGeneration != null && expectedGeneration != generation)) {
       throw ApiException('Kết nối đã thay đổi; thao tác cũ đã bị hủy.');
     }
+    final action = Object();
+    _pendingActions[action] = switch (path) {
+      '/api/import' => 'Đang gửi tài liệu',
+      '/api/update' => 'Đang gửi bản cập nhật tài liệu',
+      '/api/generate' => 'Đang yêu cầu tạo câu hỏi',
+      '/api/chat' => 'AI đang trả lời',
+      _ => 'Đang lưu thay đổi',
+    };
+    _syncProgress();
     late Json result;
     try {
       result = await api.request(path, body);
     } catch (_) {
+      if (generation == connectionGeneration && !closed) {
+        _pendingActions.remove(action);
+        _syncProgress(failed: true);
+      }
       if (generation != connectionGeneration || closed) {
         throw ApiException('Kết nối đã thay đổi; bỏ lỗi từ dịch vụ cũ.');
       }
@@ -213,7 +251,16 @@ class AppController extends ChangeNotifier {
     if (generation != connectionGeneration || closed) {
       throw ApiException('Kết nối đã thay đổi; thao tác cũ đã bị hủy.');
     }
+    // A snapshot requested before this action can omit its newly queued job.
+    await _refreshDone?.future;
+    if (generation != connectionGeneration || closed) {
+      throw ApiException('Kết nối đã thay đổi; thao tác cũ đã bị hủy.');
+    }
     await refresh();
+    if (generation == connectionGeneration && !closed) {
+      _pendingActions.remove(action);
+      _syncProgress();
+    }
     if (generation != connectionGeneration || closed) {
       throw ApiException('Kết nối đã thay đổi; bỏ kết quả thao tác cũ.');
     }
@@ -236,6 +283,8 @@ class AppController extends ChangeNotifier {
     }
     final changed = originChanged || api.token != nextToken;
     if (changed) {
+      _pendingActions.clear();
+      _syncProgress(reset: true);
       connectionGeneration++;
       state = {'documents': [], 'quizzes': [], 'jobs': [], 'attempts': []};
       connected = false;
@@ -266,6 +315,8 @@ class AppController extends ChangeNotifier {
 
   @override
   void dispose() {
+    _pendingActions.clear();
+    _syncProgress(reset: true);
     closed = true;
     timer?.cancel();
     api.client.close();

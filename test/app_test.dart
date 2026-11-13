@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'package:image_picker/image_picker.dart';
+
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -27,6 +29,10 @@ void main() {
     AudioCache.instance = TestAudioCache();
     final messenger =
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(
+      const MethodChannel('plugins.flutter.io/camera'),
+      (call) async => call.method == 'availableCameras' ? [] : null,
+    );
     messenger.setMockMethodCallHandler(
       const MethodChannel('xyz.luan/audioplayers.global'),
       (_) async => null,
@@ -64,6 +70,44 @@ void main() {
       },
     );
   });
+  testWidgets('floating navigation lets content scroll behind its gaps', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          extendBody: true,
+          body: PageBody(
+            behindNavigation: true,
+            children: const [SizedBox(height: 1200), Text('Last item')],
+          ),
+          bottomNavigationBar: StudyNavigation(
+            selected: 0,
+            onChanged: (_) {},
+            onScan: () {},
+          ),
+        ),
+      ),
+    );
+    final list = find.byType(ListView);
+    final menu = find.byType(StudyNavigation);
+    expect(
+      tester.getBottomLeft(list).dy,
+      tester.getSize(find.byType(Scaffold)).height,
+    );
+    expect(
+      tester.getBottomLeft(list).dy,
+      greaterThan(tester.getTopLeft(menu).dy),
+    );
+    await tester.drag(list, const Offset(0, -1600));
+    await tester.pumpAndSettle();
+    expect(
+      tester.getBottomLeft(find.text('Last item')).dy,
+      lessThan(tester.getTopLeft(menu).dy),
+    );
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('tab motion keeps state and follows the latest rapid tap', (
     tester,
   ) async {
@@ -158,10 +202,15 @@ void main() {
     await tester.scrollUntilVisible(find.text('Tạo bài trắc nghiệm'), -250);
     await tester.tap(find.text('Tạo bài trắc nghiệm'));
     await tester.pumpAndSettle();
-    expect(find.text('Chọn tệp từ thiết bị'), findsOneWidget);
-    await tester.scrollUntilVisible(find.text('Thử bằng tài liệu mẫu'), 200);
-    await tester.tap(find.text('Thử bằng tài liệu mẫu'));
+    expect(find.byType(UploadZone), findsOneWidget);
+    await tester.scrollUntilVisible(find.text('Thư viện tài liệu mẫu'), 200);
+    await tester.tap(find.text('Thư viện tài liệu mẫu'));
     await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.text('Xem lại 1 tệp'),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
     expect(find.text('Xem lại 1 tệp'), findsOneWidget);
     expect(tester.takeException(), isNull);
     c.dispose();
@@ -231,6 +280,8 @@ void main() {
     expect(submissions, 1);
     expect(find.text('1/1'), findsOneWidget);
     await tester.scrollUntilVisible(find.text('Xem đáp án & giải thích'), 200);
+    await tester.ensureVisible(find.text('Xem đáp án & giải thích'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Xem đáp án & giải thích'));
     await tester.pumpAndSettle();
     await tester.scrollUntilVisible(
@@ -440,6 +491,9 @@ void main() {
       ),
     );
     await tester.scrollUntilVisible(find.text('Ôn lại câu sai'), 200);
+    // Reveal the action above the floating menu overlay.
+    await tester.drag(find.byType(ListView), const Offset(0, -200));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Ôn lại câu sai'));
     await tester.pumpAndSettle();
     expect(find.text('Câu 1 · Chính xác'), findsNothing);
@@ -461,6 +515,73 @@ void main() {
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
     c.dispose();
+  });
+
+  testWidgets('center scan opens scanner and cancel restores selected tab', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    final c = AppController(await SharedPreferences.getInstance());
+    addTearDown(c.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: appTheme(),
+        home: HomeScreen(c: c, initialTab: 1),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('navigation-scan')));
+    await tester.pumpAndSettle();
+    expect(find.byType(ScanScreen), findsOneWidget);
+    final scanContext = tester.element(find.byType(ScanScreen));
+    Navigator.of(scanContext).pop();
+    await tester.pumpAndSettle();
+    expect(find.byType(ImportScreen), findsNothing);
+    expect(
+      tester.widget<StudyNavigation>(find.byType(StudyNavigation)).selected,
+      1,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('center scan retains captured file for import review', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    final c = AppController(await SharedPreferences.getInstance());
+    addTearDown(c.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: appTheme(),
+        home: HomeScreen(c: c),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('navigation-scan')));
+    await tester.pumpAndSettle();
+    final scanner = tester.widget<ScanScreen>(find.byType(ScanScreen));
+    expect(
+      await scanner.onCapture(
+        XFile.fromData(
+          base64Decode(
+            'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aFOsAAAAASUVORK5CYII=',
+          ),
+          path: '/tmp/scan.png',
+        ),
+      ),
+      isTrue,
+    );
+    Navigator.of(tester.element(find.byType(ScanScreen))).pop();
+    await tester.pumpAndSettle();
+    expect(find.byType(ImportScreen), findsOneWidget);
+    expect(find.byKey(const ValueKey('import-document-name')), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.text('1. scan.png'),
+      200,
+      scrollable: pageScroll(),
+    );
+    expect(find.text('1. scan.png'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('main screens fit small text-scaled phones and tablets', (

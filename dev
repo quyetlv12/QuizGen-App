@@ -3,9 +3,10 @@ set -euo pipefail
 
 ROOT="${0:A:h}"
 cd "$ROOT"
+source "$ROOT/scripts/flutter-env.sh"
 
 health_ready() {
-  [[ "$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:8787/api/health 2>/dev/null || true)" == "401" ]]
+  [[ "$(curl --max-time 3 -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:8787/api/health 2>/dev/null || true)" == "401" ]]
 }
 
 server_pid=""
@@ -17,12 +18,23 @@ if ! health_ready; then
   trap 'kill "$server_pid" 2>/dev/null || true' EXIT INT TERM
   for _ in {1..60}; do
     health_ready && break
-    kill -0 "$server_pid" 2>/dev/null || { cat "$ROOT/.local/dev-server.log" >&2; exit 1; }
+    kill -0 "$server_pid" 2>/dev/null || { echo "Backend đã dừng; xem .local/dev-server.log." >&2; exit 1; }
     sleep 0.5
   done
   health_ready || { echo "Backend chưa sẵn sàng; xem .local/dev-server.log." >&2; exit 1; }
 fi
 
-device_id="$(flutter --build-dir="$ROOT/.flutter-build" devices --machine | python3 -c 'import json,sys; print(next((d["id"] for d in json.load(sys.stdin) if d.get("emulator") and d.get("targetPlatform")=="ios" and d.get("isSupported")), ""))')"
-[[ -n "$device_id" ]] || { echo "Không tìm thấy máy ảo iOS đang có trong Flutter devices." >&2; exit 1; }
-exec python3 "$ROOT/scripts/flutter-local.py" run -d "$device_id" --build-dir="$ROOT/.flutter-build"
+device_id="$(xcrun simctl list devices available --json | python3 -c 'import json,sys; devices=[d for runtime,rows in json.load(sys.stdin)["devices"].items() if ".iOS-" in runtime for d in rows if d.get("isAvailable") and "iPhone" in d["name"]]; devices.sort(key=lambda d:d["state"]!="Booted"); print(devices[0]["udid"] if devices else "")')"
+[[ -n "$device_id" ]] || { echo "Chưa có máy ảo iPhone. Tạo simulator trong Xcode trước." >&2; exit 1; }
+if ! xcrun simctl list devices booted | grep -Fq "$device_id"; then
+  xcrun simctl boot "$device_id"
+fi
+simulator_app="$(xcode-select -p)/Applications/Simulator.app"
+if [[ -d "$simulator_app" ]]; then
+  open -a "$simulator_app"
+else
+  open -a Simulator 2>/dev/null || echo "Không mở được cửa sổ Simulator; vẫn cài/chạy trên máy ảo đang boot."
+fi
+xcrun simctl bootstatus "$device_id" -b
+# Flutter hot mode hardcodes build/ for source generators, conflicting with ./build.
+python3 "$ROOT/scripts/flutter-local.py" run -d "$device_id" --no-hot

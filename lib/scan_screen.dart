@@ -475,75 +475,77 @@ class _ScanScreenState extends State<ScanScreen> with WidgetsBindingObserver {
               Center(
                 child: Padding(
                   padding: const EdgeInsets.all(26),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (opening)
-                        const CircularProgressIndicator(color: Colors.white)
-                      else ...[
-                        Stack(
-                          alignment: Alignment.center,
-                          children: [
-                            const Icon(
-                              Icons.document_scanner_outlined,
-                              size: 92,
-                              color: Color(0xFFE4FFEA),
-                            ),
-                            Container(
-                              width: 128,
-                              height: 2,
-                              decoration: const BoxDecoration(
-                                color: Color(0xFF86FF9E),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Color(0xFF32FF6C),
-                                    blurRadius: 15,
-                                    spreadRadius: 3,
-                                  ),
-                                ],
+                  child: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (opening)
+                          const CircularProgressIndicator(color: Colors.white)
+                        else ...[
+                          Stack(
+                            alignment: Alignment.center,
+                            children: [
+                              const Icon(
+                                Icons.document_scanner_outlined,
+                                size: 92,
+                                color: Color(0xFFE4FFEA),
                               ),
-                            ),
-                          ],
-                        ),
-                      ],
-                      const SizedBox(height: 22),
-                      Text(
-                        opening
-                            ? 'Đang mở camera…'
-                            : cameraError != null
-                            ? 'Chưa mở được camera'
-                            : 'Đặt tài liệu trong khung và chụp',
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white,
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      Text(
-                        cameraError ??
-                            (opening
-                                ? 'Hình camera sẽ hiển thị ngay trong khung này'
-                                : 'Camera sẽ tự mở khi màn hình sẵn sàng'),
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          fontSize: 13,
-                          color: Color(0xFFDAF3E2),
-                        ),
-                      ),
-                      if (cameraError != null)
-                        TextButton(
-                          onPressed: opening ? null : openCamera,
-                          child: const Text(
-                            'Thử lại',
-                            style: TextStyle(
-                              color: Colors.white,
-                              decoration: TextDecoration.underline,
-                            ),
+                              Container(
+                                width: 128,
+                                height: 2,
+                                decoration: const BoxDecoration(
+                                  color: Color(0xFF86FF9E),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Color(0xFF32FF6C),
+                                      blurRadius: 15,
+                                      spreadRadius: 3,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                        const SizedBox(height: 22),
+                        Text(
+                          opening
+                              ? 'Đang mở camera…'
+                              : cameraError != null
+                              ? 'Chưa mở được camera'
+                              : 'Đặt tài liệu trong khung và chụp',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white,
                           ),
                         ),
-                    ],
+                        const SizedBox(height: 10),
+                        Text(
+                          cameraError ??
+                              (opening
+                                  ? 'Hình camera sẽ hiển thị ngay trong khung này'
+                                  : 'Camera sẽ tự mở khi màn hình sẵn sàng'),
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            color: Color(0xFFDAF3E2),
+                          ),
+                        ),
+                        if (cameraError != null)
+                          TextButton(
+                            onPressed: opening ? null : openCamera,
+                            child: const Text(
+                              'Thử lại',
+                              style: TextStyle(
+                                color: Colors.white,
+                                decoration: TextDecoration.underline,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
                   ),
                 ),
               ),

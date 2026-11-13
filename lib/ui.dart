@@ -1,6 +1,92 @@
+import 'dart:async';
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 
 import 'theme.dart';
+
+class AiThinkingIndicator extends StatefulWidget {
+  const AiThinkingIndicator({super.key});
+
+  @override
+  State<AiThinkingIndicator> createState() => _AiThinkingIndicatorState();
+}
+
+class _AiThinkingIndicatorState extends State<AiThinkingIndicator>
+    with SingleTickerProviderStateMixin {
+  late final _motion = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1200),
+  );
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _motion.stop();
+      _motion.value = 0;
+    } else if (!_motion.isAnimating) {
+      _motion.repeat();
+    }
+  }
+
+  @override
+  void dispose() {
+    _motion.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final reducedMotion = MediaQuery.disableAnimationsOf(context);
+    return Semantics(
+      label: 'AI đang xử lý',
+      liveRegion: true,
+      child: ExcludeSemantics(
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const RobotArt(size: 40),
+            const SizedBox(width: 10),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 17),
+              decoration: BoxDecoration(
+                color: mint,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: AnimatedBuilder(
+                animation: _motion,
+                builder: (context, _) => Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: List.generate(4, (index) {
+                    final pulse = reducedMotion
+                        ? 0.0
+                        : max(0.0, sin((_motion.value - index * .15) * 2 * pi));
+                    return Transform.translate(
+                      offset: Offset(0, -4 * pulse),
+                      child: Opacity(
+                        opacity: reducedMotion ? 1 : .4 + .6 * pulse,
+                        child: Container(
+                          margin: const EdgeInsets.symmetric(horizontal: 3),
+                          width: 6,
+                          height: 6,
+                          decoration: const BoxDecoration(
+                            color: forest,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                      ),
+                    );
+                  }),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
 
 class BrandBar extends StatelessWidget implements PreferredSizeWidget {
   final VoidCallback onNotifications;
@@ -101,6 +187,280 @@ class RobotArt extends StatelessWidget {
       fit: BoxFit.contain,
     ),
   );
+}
+
+class AiChatLauncher extends StatefulWidget {
+  const AiChatLauncher({super.key, required this.onPressed});
+  final VoidCallback onPressed;
+
+  @override
+  State<AiChatLauncher> createState() => _AiChatLauncherState();
+}
+
+class _AiChatLauncherState extends State<AiChatLauncher>
+    with WidgetsBindingObserver {
+  static const messages = [
+    'Hỏi AI nhé!',
+    'Mình giúp bạn\ntạo bộ đề nhé?',
+    'Bạn muốn ôn\nchủ đề nào?',
+    'Cùng ôn tập\nmột chút nhé!',
+  ];
+  final random = Random();
+  Timer? timer;
+  bool visible = false;
+  int message = 0;
+  bool greeted = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    timer = Timer(const Duration(milliseconds: 800), showMessage);
+  }
+
+  void scheduleNext() {
+    timer?.cancel();
+    timer = Timer(Duration(seconds: 25 + random.nextInt(21)), showMessage);
+  }
+
+  void showMessage() {
+    if (!mounted) return;
+    if (ModalRoute.of(context)?.isCurrent == false) {
+      scheduleNext();
+      return;
+    }
+    setState(() {
+      if (greeted) {
+        message =
+            (message + 1 + random.nextInt(messages.length - 1)) %
+            messages.length;
+      }
+      greeted = true;
+      visible = true;
+    });
+    timer = Timer(const Duration(seconds: 5), () {
+      if (!mounted) return;
+      setState(() => visible = false);
+      scheduleNext();
+    });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    timer?.cancel();
+    if (mounted) setState(() => visible = false);
+    if (state == AppLifecycleState.resumed) scheduleNext();
+  }
+
+  void openChat() {
+    setState(() => visible = false);
+    timer?.cancel();
+    scheduleNext();
+    widget.onPressed();
+  }
+
+  @override
+  void dispose() {
+    timer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final duration = MediaQuery.disableAnimationsOf(context)
+        ? Duration.zero
+        : const Duration(milliseconds: 320);
+    return SizedBox(
+      width: 206,
+      height: 78,
+      child: Stack(
+        children: [
+          Positioned(
+            right: 75,
+            top: 10,
+            width: 129,
+            height: 55,
+            child: IgnorePointer(
+              ignoring: !visible,
+              child: ExcludeSemantics(
+                excluding: !visible,
+                child: AnimatedSlide(
+                  offset: visible ? Offset.zero : const Offset(.08, .08),
+                  duration: duration,
+                  curve: Curves.easeOutCubic,
+                  child: AnimatedOpacity(
+                    key: const ValueKey('ai-hint'),
+                    opacity: visible ? 1 : 0,
+                    duration: duration,
+                    curve: Curves.easeInOut,
+                    child: CustomPaint(
+                      painter: const _ChatBubblePainter(),
+                      child: Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          onTap: openChat,
+                          borderRadius: BorderRadius.circular(20),
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(10, 5, 10, 15),
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text(
+                                messages[message],
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(
+                                  color: ink,
+                                  fontSize: 14,
+                                  height: 1.2,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            right: 0,
+            bottom: 0,
+            width: 68,
+            height: 78,
+            child: FloatingActionButton(
+              tooltip: 'Chat với AI',
+              onPressed: openChat,
+              backgroundColor: Colors.transparent,
+              elevation: 0,
+              focusElevation: 0,
+              hoverElevation: 0,
+              highlightElevation: 0,
+              shape: const CircleBorder(),
+              child: const FittedBox(child: _AiRobotBadge()),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AiRobotBadge extends StatelessWidget {
+  const _AiRobotBadge();
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    width: 94,
+    height: 106,
+    child: Stack(
+      children: [
+        Positioned(
+          right: 4,
+          bottom: 5,
+          child: Container(
+            width: 84,
+            height: 84,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [Color(0xFFB7FF85), Colors.white, Color(0xFF73EB43)],
+              ),
+              border: Border.all(color: const Color(0xFF0AC525), width: 2.5),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x665AFF29),
+                  blurRadius: 18,
+                  spreadRadius: 4,
+                ),
+                BoxShadow(
+                  color: Color(0x26006C39),
+                  blurRadius: 6,
+                  offset: Offset(0, 4),
+                ),
+              ],
+            ),
+            child: ClipOval(
+              child: OverflowBox(
+                alignment: Alignment.topCenter,
+                maxWidth: 105,
+                maxHeight: 105,
+                child: const RobotArt(size: 105),
+              ),
+            ),
+          ),
+        ),
+        Positioned(
+          top: 8,
+          right: 19,
+          child: Transform.rotate(
+            angle: .3,
+            child: Container(width: 3, height: 19, color: forest),
+          ),
+        ),
+        Positioned(
+          top: 0,
+          right: 13,
+          child: Container(
+            width: 14,
+            height: 14,
+            decoration: const BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: LinearGradient(
+                colors: [Color(0xFFFFF44F), Color(0xFFFFBD00)],
+              ),
+            ),
+          ),
+        ),
+        const Positioned(
+          top: 12,
+          right: 80,
+          child: Icon(Icons.auto_awesome, size: 17, color: Color(0xFFFFD42A)),
+        ),
+      ],
+    ),
+  );
+}
+
+class _ChatBubblePainter extends CustomPainter {
+  const _ChatBubblePainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final bottom = size.height - 12;
+    final path = Path()
+      ..moveTo(20, 1)
+      ..lineTo(size.width - 20, 1)
+      ..quadraticBezierTo(size.width - 1, 1, size.width - 1, 20)
+      ..quadraticBezierTo(
+        size.width - 1,
+        bottom - 6,
+        size.width - 14,
+        bottom - 2,
+      )
+      ..lineTo(size.width - 12, size.height - 2)
+      ..lineTo(size.width - 29, bottom)
+      ..lineTo(20, bottom)
+      ..quadraticBezierTo(1, bottom, 1, 20)
+      ..quadraticBezierTo(1, 1, 20, 1)
+      ..close();
+    canvas.drawShadow(path, const Color(0x55071C14), 5, false);
+    canvas.drawPath(path, Paint()..color = const Color(0xFFFFFEF3));
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = const Color(0xFF88E83F)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.2,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_ChatBubblePainter oldDelegate) => false;
 }
 
 class PageTitle extends StatelessWidget {
@@ -369,77 +729,264 @@ class StatusPill extends StatelessWidget {
 class StudyNavigation extends StatelessWidget {
   final int selected;
   final ValueChanged<int> onChanged;
+  final VoidCallback onScan;
   const StudyNavigation({
     super.key,
     required this.selected,
     required this.onChanged,
+    required this.onScan,
   });
   @override
-  Widget build(BuildContext context) => Container(
-    decoration: const BoxDecoration(
-      color: Colors.white,
-      border: Border(top: BorderSide(color: line)),
-      borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-    ),
-    child: SafeArea(
-      top: false,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(10, 6, 10, 4),
-        child: Row(
-          children: [
-            for (int i = 0; i < 4; i++)
-              Expanded(
-                child: Semantics(
-                  selected: selected == i,
-                  button: true,
-                  child: Material(
-                    color: selected == i ? mint : Colors.white,
-                    animationDuration: MediaQuery.disableAnimationsOf(context)
-                        ? Duration.zero
-                        : const Duration(milliseconds: 180),
-                    borderRadius: BorderRadius.circular(20),
-                    clipBehavior: Clip.antiAlias,
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(20),
-                      onTap: () => onChanged(i),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 10),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              [
-                                Icons.home_outlined,
-                                Icons.description_outlined,
-                                Icons.assignment_outlined,
-                                Icons.person_outline_rounded,
-                              ][i],
-                              size: 25,
-                              color: selected == i ? green : muted,
-                            ),
-                            const SizedBox(height: 3),
-                            Text(
-                              ['Trang chủ', 'Tài liệu', 'Bộ đề', 'Cá nhân'][i],
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: selected == i ? green : muted,
-                                fontWeight: selected == i
-                                    ? FontWeight.w700
-                                    : FontWeight.w500,
+  Widget build(BuildContext context) => SafeArea(
+    top: false,
+    minimum: const EdgeInsets.only(bottom: 12),
+    child: Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Stack(
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(top: 30),
+            child: CustomPaint(
+              painter: const _NavigationBarPainter(),
+              child: ClipPath(
+                clipper: const _NavigationBarClipper(),
+                child: Padding(
+                  padding: const EdgeInsets.all(6),
+                  child: Row(
+                    children: [
+                      for (int i = 0; i < 4; i++) ...[
+                        if (i == 2) const SizedBox(width: 72),
+                        Expanded(
+                          child: Semantics(
+                            selected: selected == i,
+                            button: true,
+                            child: Material(
+                              color: selected == i ? mint : Colors.transparent,
+                              animationDuration:
+                                  MediaQuery.disableAnimationsOf(context)
+                                  ? Duration.zero
+                                  : const Duration(milliseconds: 180),
+                              borderRadius: BorderRadius.circular(22),
+                              clipBehavior: Clip.antiAlias,
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(22),
+                                onTap: () => onChanged(i),
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 10,
+                                  ),
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        [
+                                          Icons.home_outlined,
+                                          Icons.description_outlined,
+                                          Icons.assignment_outlined,
+                                          Icons.person_outline_rounded,
+                                        ][i],
+                                        size: 24,
+                                        color: selected == i ? green : muted,
+                                      ),
+                                      const SizedBox(height: 3),
+                                      FittedBox(
+                                        fit: BoxFit.scaleDown,
+                                        child: Text(
+                                          [
+                                            'Trang chủ',
+                                            'Tài liệu',
+                                            'Bộ đề',
+                                            'Cá nhân',
+                                          ][i],
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            color: selected == i
+                                                ? green
+                                                : muted,
+                                            fontWeight: selected == i
+                                                ? FontWeight.w700
+                                                : FontWeight.w500,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
                               ),
                             ),
-                          ],
+                          ),
                         ),
-                      ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: Container(
+                width: 72,
+                height: 72,
+                padding: const EdgeInsets.all(5),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: line),
+                  boxShadow: [
+                    BoxShadow(
+                      color: forest.withValues(alpha: .16),
+                      blurRadius: 12,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
+                ),
+                child: DecoratedBox(
+                  decoration: const BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [Color(0xFF05B600), green],
+                    ),
+                  ),
+                  child: Material(
+                    color: Colors.transparent,
+                    shape: const CircleBorder(),
+                    clipBehavior: Clip.antiAlias,
+                    child: IconButton(
+                      key: const ValueKey('navigation-scan'),
+                      tooltip: 'Quét tài liệu',
+                      onPressed: onScan,
+                      icon: const _NavigationScanIcon(),
                     ),
                   ),
                 ),
               ),
-          ],
-        ),
+            ),
+          ),
+        ],
       ),
     ),
   );
+}
+
+class _NavigationBarPainter extends CustomPainter {
+  const _NavigationBarPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final path = const _NavigationBarClipper().getClip(size);
+    // Paint the same silhouette for the shadow and border, including the recess.
+    canvas.drawPath(
+      path.shift(const Offset(0, 12)),
+      Paint()
+        ..color = green.withValues(alpha: .15)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 12),
+    );
+    canvas.drawPath(
+      path.shift(const Offset(0, 4)),
+      Paint()
+        ..color = forest.withValues(alpha: .07)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
+    );
+    canvas.drawPath(path, Paint()..color = Colors.white);
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = line
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_NavigationBarPainter oldDelegate) => false;
+}
+
+class _NavigationBarClipper extends CustomClipper<Path> {
+  const _NavigationBarClipper();
+
+  @override
+  Path getClip(Size size) {
+    const radius = 28.0;
+    final center = size.width / 2;
+    return Path()
+      ..moveTo(radius, 0)
+      ..lineTo(center - 48, 0)
+      ..cubicTo(center - 36, 0, center - 44, 51, center, 51)
+      ..cubicTo(center + 44, 51, center + 36, 0, center + 48, 0)
+      ..lineTo(size.width - radius, 0)
+      ..quadraticBezierTo(size.width, 0, size.width, radius)
+      ..lineTo(size.width, size.height - radius)
+      ..quadraticBezierTo(
+        size.width,
+        size.height,
+        size.width - radius,
+        size.height,
+      )
+      ..lineTo(radius, size.height)
+      ..quadraticBezierTo(0, size.height, 0, size.height - radius)
+      ..lineTo(0, radius)
+      ..quadraticBezierTo(0, 0, radius, 0)
+      ..close();
+  }
+
+  @override
+  bool shouldReclip(_NavigationBarClipper oldClipper) => false;
+}
+
+class _NavigationScanIcon extends StatelessWidget {
+  const _NavigationScanIcon();
+
+  @override
+  Widget build(BuildContext context) {
+    final reducedMotion = MediaQuery.disableAnimationsOf(context);
+    return RepaintBoundary(
+      child: TweenAnimationBuilder<double>(
+        key: ValueKey(reducedMotion),
+        tween: Tween(begin: 0, end: 1),
+        duration: reducedMotion
+            ? Duration.zero
+            : const Duration(milliseconds: 2200),
+        builder: (context, progress, child) => SizedBox.square(
+          dimension: 34,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              child!,
+              Transform.translate(
+                key: const ValueKey('navigation-scan-line'),
+                offset: Offset(0, sin(progress * 2 * pi) * 10),
+                child: Container(
+                  width: 23,
+                  height: 2.5,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(2),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.white.withValues(alpha: .45),
+                        blurRadius: 5,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        child: const Icon(
+          Icons.crop_free_rounded,
+          size: 34,
+          color: Colors.white,
+        ),
+      ),
+    );
+  }
 }
 
 class UploadZone extends StatelessWidget {
@@ -610,10 +1157,12 @@ class FileTypeChip extends StatelessWidget {
 class ChoicePill extends StatelessWidget {
   final String label;
   final bool selected;
+  final IconData? icon;
   final VoidCallback? onTap;
   const ChoicePill(
     this.label, {
     super.key,
+    this.icon,
     required this.selected,
     required this.onTap,
   });
@@ -635,10 +1184,25 @@ class ChoicePill extends StatelessWidget {
           disabledForegroundColor: selected ? Colors.white : ink,
         ),
         onPressed: onTap,
-        child: Text(
-          label,
-          textAlign: TextAlign.center,
-          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            if (icon != null) ...[
+              Icon(icon, size: 18),
+              const SizedBox(width: 6),
+            ],
+            Flexible(
+              child: Text(
+                label,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     ),

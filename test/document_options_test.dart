@@ -410,7 +410,46 @@ void main() {
       expect(submissions.single['count'], 1);
       expect(submissions.single['name'], 'Tên tài liệu đã đặt');
       expect(submissions.single['documentId'], 'document-one');
+      expect(submissions.single['instructions'], '');
       expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'optional AI instructions can be typed above keyboard and sent trimmed',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      for (final size in [const Size(393, 852), const Size(1280, 900)]) {
+        tester.view.physicalSize = size;
+        tester.view.viewInsets = const FakeViewPadding();
+        await open(tester, DocumentScreen(c: controller, document: document()));
+        final input = find.byKey(const ValueKey('generate-instructions'));
+        await tester.ensureVisible(input);
+        await tester.tap(input);
+        tester.view.viewInsets = const FakeViewPadding(bottom: 320);
+        await tester.pumpAndSettle();
+        await tester.ensureVisible(input);
+        await tester.enterText(
+          input,
+          '  Tập trung vào ngữ pháp.\nƯu tiên câu hỏi vận dụng.  ',
+        );
+        await tester.pumpAndSettle();
+        expect(
+          tester.getRect(input).bottom,
+          lessThanOrEqualTo(size.height - 320),
+        );
+        tester.view.viewInsets = const FakeViewPadding();
+        FocusManager.instance.primaryFocus?.unfocus();
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Tạo câu hỏi với AI'));
+        await tester.pumpAndSettle();
+        expect(
+          submissions.last['instructions'],
+          'Tập trung vào ngữ pháp.\nƯu tiên câu hỏi vận dụng.',
+        );
+        expect(tester.takeException(), isNull);
+      }
     },
   );
 

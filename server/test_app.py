@@ -177,6 +177,28 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(restarted.state['documents'][0]['name'], 'Đề 100 😀')
         self.assertEqual([q['title'] for q in restarted.state['quizzes']], ['Đề 100 😀', 'Đề 31 😀', 'Đề 7 😀', 'Đề 1 😀'])
 
+    def test_generate_optional_instructions_validation_and_ai_payload(self):
+        for instructions in (None, 42, [], 'x' * 2001):
+            body = self.seed_document()
+            before = copy.deepcopy(self.store.state)
+            with self.subTest(instructions=type(instructions).__name__), self.assertRaises(app.AppError):
+                self.store.new_job({**body, 'instructions': instructions}, 'generate')
+            self.assertEqual(self.store.state, before)
+        for index, instructions in enumerate(('', '   ', '  Tập trung vào ngữ pháp.  ', 'x' * 2000)):
+            body = {**self.seed_document(), 'requestId': f'instructions-{index}', 'instructions': instructions}
+            job, _ = self.store.new_job(body, 'generate')
+            response = dict(choices=[dict(message=dict(content=json.dumps(dict(questions=[question()]))))])
+            with patch.object(app, 'CONFIG') as config, patch.object(app, 'ai_request', return_value=response) as ai:
+                config.read_text.return_value = '{"model":"fixture"}'
+                self.store.process(job, body)
+            self.assertEqual(self.store.current_job(job)['stage'], 'ready')
+            messages = ai.call_args.args[1]['messages']
+            self.assertEqual(len(messages), 3 if instructions.strip() else 2)
+            if instructions.strip():
+                self.assertEqual(messages[1], dict(role='user', content='Yêu cầu bổ sung: ' + instructions.strip()))
+            self.assertEqual(json.loads(messages[-1]['content']), [dict(page=1, text=SOURCE)])
+            self.assertIn('Chỉ dùng dữ kiện trong nguồn', messages[0]['content'])
+
     def test_generate_retry_and_active_dedupe_do_not_rename_or_resubmit(self):
         body = self.seed_document()
         job, _ = self.store.new_job(body, 'generate')
@@ -230,6 +252,43 @@ class StoreTests(unittest.TestCase):
         self.assertTrue(fresh)
         self.assertEqual(job['name'], 'Đề mới 😀')
         self.assertEqual(self.store.document('doc-123')['name'], 'Đề mới 😀')
+
+    def test_chat_admission_validates_prompt_and_replays_request(self):
+        valid = dict(requestId='chat-request-123', name='  Đề từ chat  ',
+                     prompt='Tạo đề Sinh học lớp 9 về hệ hô hấp.', count=5)
+        for prompt in (None, '', 'ngắn', 'x' * 4001):
+            with self.subTest(prompt=prompt), self.assertRaises(app.AppError):
+                self.store.new_job({**valid, 'prompt': prompt}, 'chat')
+        for count in (0, 101, True, 5.0, '5', None):
+            with self.subTest(count=count), self.assertRaises(app.AppError):
+                self.store.new_job({**valid, 'count': count}, 'chat')
+        job, fresh = self.store.new_job(valid, 'chat')
+        self.assertTrue(fresh)
+        self.assertEqual(job['name'], 'Đề từ chat')
+        replay, fresh = self.store.new_job({**valid, 'name': 'Tên khác', 'count': 15}, 'chat')
+        self.assertFalse(fresh)
+        self.assertEqual(replay, job)
+
+    def test_chat_completion_persists_quiz_and_invalid_ai_output_fails(self):
+        body = dict(requestId='chat-complete-123', name='Đề Sinh học',
+                    prompt='Tạo câu hỏi Sinh học lớp 9 về hô hấp.', count=5)
+        for valid in (True, False):
+            with self.subTest(valid=valid):
+                job, _ = self.store.new_job({**body, 'requestId': f'chat-complete-{valid}'}, 'chat')
+                raw = dict(questions=[question()])
+                if not valid:
+                    raw['questions'][0]['options'] = ['A', 'A', 'B', 'C']
+                response = dict(choices=[dict(message=dict(content=json.dumps(raw)))])
+                with patch.object(app, 'CONFIG') as config, patch.object(app, 'ai_request', return_value=response):
+                    config.read_text.return_value = '{"model":"fixture"}'
+                    self.store.process(job, body)
+                self.assertEqual(self.store.current_job(job)['stage'], 'ready' if valid else 'failed')
+        restarted = app.Store(self.tmp.name)
+        self.assertEqual(len(restarted.state['quizzes']), 1)
+        quiz = restarted.state['quizzes'][0]
+        self.assertEqual(quiz['title'], body['name'])
+        self.assertEqual(quiz['questions'][0]['sourceType'], 'ai')
+        self.assertEqual(restarted.document(quiz['documentId'])['pages'], [body['prompt']])
 
     def test_generate_completion_save_failure_does_not_leave_a_quiz(self):
         body = self.seed_document()
@@ -327,9 +386,9 @@ class AuthTests(unittest.TestCase):
             app.load_auth_token(link)
 
     def test_every_route_requires_auth_before_state_ai_or_mutation(self):
-        for route in ('state', 'health', 'connection', 'import', 'generate', 'attempts', 'trash'):
+        for route in ('state', 'health', 'connection', 'import', 'generate', 'chat', 'attempts', 'trash'):
             conn = http.client.HTTPConnection(*self.server.server_address, timeout=2)
-            method = 'POST' if route in ('import', 'generate', 'attempts', 'trash') else 'GET'
+            method = 'POST' if route in ('import', 'generate', 'chat', 'attempts', 'trash') else 'GET'
             conn.request(method, '/api/' + route, body='{}' if method == 'POST' else None,
                          headers={'Host': '127.0.0.1:8787', 'Content-Type': 'application/json'})
             response = conn.getresponse()
@@ -416,6 +475,36 @@ class AuthTests(unittest.TestCase):
             self.assertEqual(executor.submit.call_args.args[2]['count'], count)
             store.job_update(generated, stage='ready')
         self.assertEqual(executor.submit.call_count, 4)
+
+    def test_chat_endpoint_accepts_valid_request_and_deduplicates(self):
+        store = app.Store(Path(self.tmp.name) / 'chat-options')
+        executor = Mock()
+        self.server.RequestHandlerClass = app.make_handler(store, executor, self.token)
+
+        def post(body):
+            conn = http.client.HTTPConnection(*self.server.server_address, timeout=2)
+            conn.request('POST', '/api/chat', body=json.dumps(body), headers={
+                'Host': '127.0.0.1:8787', 'Content-Type': 'application/json',
+                'Authorization': 'Bearer ' + self.token})
+            response = conn.getresponse()
+            result = response.status, json.loads(response.read())
+            conn.close()
+            return result
+
+        valid = dict(requestId='http-chat-123', name='  Đề chat  ',
+                     prompt='Tạo 5 câu Vật lý lớp 8 về lực đẩy.', count=5)
+        for prompt in ('', 'ngắn', 'x' * 4001):
+            status, result = post({**valid, 'prompt': prompt})
+            self.assertEqual(status, 400)
+            self.assertIn('error', result)
+        status, job = post(valid)
+        self.assertEqual(status, 202)
+        self.assertEqual(job['name'], 'Đề chat')
+        status, replay = post({**valid, 'name': 'Tên khác', 'count': 15})
+        self.assertEqual(status, 202)
+        self.assertEqual(replay, job)
+        executor.submit.assert_called_once()
+        self.assertEqual(executor.submit.call_args.args[2]['prompt'], valid['prompt'])
 
     def test_rotated_token_rejects_previous_token_after_handler_reload(self):
         path = Path(self.tmp.name) / 'rotated-token'

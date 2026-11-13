@@ -14,6 +14,23 @@ spec.loader.exec_module(launcher)
 
 
 class ProvisionTests(unittest.TestCase):
+    def setUp(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        root_patch = patch.object(launcher, 'ROOT', Path(folder.name))
+        root_patch.start()
+        self.addCleanup(root_patch.stop)
+
+    def test_waits_for_existing_flutter_command(self):
+        output = io.StringIO()
+        with patch.object(launcher, 'load_auth_token', return_value='synthetic-token'), \
+                patch.object(launcher.fcntl, 'flock', side_effect=[BlockingIOError, None]) as lock, \
+                patch.object(launcher.subprocess, 'call', return_value=0), \
+                contextlib.redirect_stdout(output):
+            self.assertEqual(launcher.main(['build', 'ios']), 0)
+        self.assertEqual(lock.call_count, 2)
+        self.assertIn('Một lệnh Flutter khác đang chạy', output.getvalue())
+
     def test_automatically_creates_reuses_and_cleans_private_configuration(self):
         with tempfile.TemporaryDirectory() as folder:
             auth = Path(folder) / 'token'

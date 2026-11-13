@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Provision this Mac's local or --phone tunnel relay into a personal Flutter build."""
+import fcntl
 import json
 import os
 from pathlib import Path
@@ -41,7 +42,15 @@ def main(args=None):
                 json.dump({'QUIZMIND_RELAY_URL': relay,
                            'QUIZMIND_RELAY_TOKEN': token}, stream)
             print('Đã tự cấu hình địa chỉ và token relay cho app.', flush=True)
-            return subprocess.call(['flutter', *args, f'--dart-define-from-file={config}'], cwd=ROOT)
+            lock_path = ROOT / '.local/flutter.lock'
+            lock_path.parent.mkdir(exist_ok=True)
+            with lock_path.open('a') as lock:
+                try:
+                    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError:
+                    print('Một lệnh Flutter khác đang chạy. Dừng ./dev trước nếu muốn build máy thật.', flush=True)
+                    fcntl.flock(lock, fcntl.LOCK_EX)
+                return subprocess.call(['flutter', *args, f'--dart-define-from-file={config}'], cwd=ROOT)
     except (AppError, OSError, ValueError):
         print('Không cấu hình được relay local. Kiểm tra Flutter, token (0600); với --phone cần chạy scripts/start-phone.py trước.', file=sys.stderr)
         return 1
