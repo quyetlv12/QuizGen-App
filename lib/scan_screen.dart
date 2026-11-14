@@ -145,12 +145,9 @@ class _ScanScreenState extends State<ScanScreen> with WidgetsBindingObserver {
       if (mounted && added) Navigator.pop(context);
     } catch (_) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Không thêm được ảnh. Hãy thử lại hoặc chọn ảnh từ thư viện.',
-            ),
-          ),
+        showAppToast(
+          context,
+          'Không thêm được ảnh. Hãy thử lại hoặc chọn ảnh từ thư viện.',
         );
       }
     } finally {

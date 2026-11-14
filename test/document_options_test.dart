@@ -41,10 +41,20 @@ class NoCamera extends CameraPlatform {
 void main() {
   late AppController controller;
   late List<Json> submissions;
+  late String importStage;
+
+  Json document() => {
+    'id': 'document-one',
+    'name': 'Tên cũ',
+    'pages': ['Nội dung tài liệu đã đọc.'],
+    'warnings': [],
+    'createdAt': 1,
+  };
 
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
     submissions = [];
+    importStage = 'ready';
     controller = AppController(
       await SharedPreferences.getInstance(),
       api: LocalApi(
@@ -55,8 +65,25 @@ void main() {
             return http.Response('{"id":"job"}', 200);
           }
           return http.Response(
-            '{"documents":[],"quizzes":[],"jobs":[],"attempts":[]}',
+            jsonEncode({
+              'documents': submissions.isEmpty ? [] : [document()],
+              'quizzes': [],
+              'jobs': submissions.isEmpty
+                  ? []
+                  : [
+                      {
+                        'id': 'job',
+                        'name': 'Tài liệu mới',
+                        'type': 'import',
+                        'stage': importStage,
+                        'documentId': 'document-one',
+                        'error': 'Không đọc được file',
+                      },
+                    ],
+              'attempts': [],
+            }),
             200,
+            headers: {'content-type': 'application/json; charset=utf-8'},
           );
         }),
       ),
@@ -85,13 +112,59 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  Json document() => {
-    'id': 'document-one',
-    'name': 'Tên cũ',
-    'pages': ['Nội dung tài liệu đã đọc.'],
-    'warnings': [],
-    'createdAt': 1,
-  };
+  for (final stage in ['ready', 'failed']) {
+    testWidgets('import waits for extraction then handles $stage', (
+      tester,
+    ) async {
+      importStage = 'extracting';
+      await open(tester, ImportScreen(c: controller));
+      await tester.scrollUntilVisible(
+        find.text('Thư viện tài liệu mẫu'),
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.tap(find.text('Thư viện tài liệu mẫu'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('import-document-name')),
+        'Tài liệu mới',
+      );
+      tester.testTextInput.hide();
+      FocusManager.instance.primaryFocus?.unfocus();
+      await tester.scrollUntilVisible(
+        find.text('Đọc nội dung tài liệu'),
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Đọc nội dung tài liệu'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(find.byType(ImportScreen), findsOneWidget);
+      expect(find.byType(DocumentScreen), findsNothing);
+      expect(find.text('Đang đọc tài liệu…'), findsOneWidget);
+      importStage = stage;
+      await controller.refresh();
+      await tester.pumpAndSettle();
+      if (stage == 'ready') {
+        expect(find.byType(ImportScreen), findsNothing);
+        final screen = tester.widget<DocumentScreen>(
+          find.byType(DocumentScreen),
+        );
+        expect(screen.document['id'], 'document-one');
+        await tester.tap(find.byTooltip('Quay lại'));
+        await tester.pumpAndSettle();
+        expect(find.text('Mở'), findsOneWidget);
+      } else {
+        expect(find.byType(ImportScreen), findsOneWidget);
+        expect(find.text('Không đọc được file'), findsOneWidget);
+        expect(find.text('Đọc nội dung tài liệu'), findsOneWidget);
+        await tester.pump(const Duration(seconds: 7));
+        await tester.pumpAndSettle();
+      }
+      expect(tester.takeException(), isNull);
+    });
+  }
 
   testWidgets(
     'import requires a typed name, never uses the filename as fallback',
@@ -160,6 +233,14 @@ void main() {
   );
 
   Future<void> tapVisible(WidgetTester tester, Finder target) async {
+    if (target.hitTestable().evaluate().isNotEmpty) {
+      await tester.tap(target);
+      await tester.pumpAndSettle();
+      return;
+    }
+    final scroll = tester.state<ScrollableState>(find.byType(Scrollable).first);
+    scroll.position.jumpTo(0);
+    await tester.pumpAndSettle();
     await tester.scrollUntilVisible(
       target,
       180,
@@ -386,8 +467,9 @@ void main() {
       final count = find.byKey(const ValueKey('question-count'));
       expect(tester.widget<TextFormField>(name).controller!.text, 'Tên cũ');
       await tester.enterText(name, '   ');
-      await tester.tap(find.text('Tạo câu hỏi với AI'));
-      await tester.pumpAndSettle();
+      tester.testTextInput.hide();
+      FocusManager.instance.primaryFocus?.unfocus();
+      await tapVisible(tester, find.text('Tạo câu hỏi với AI'));
       expect(find.text('Vui lòng nhập tên tài liệu.'), findsOneWidget);
       expect(submissions, isEmpty);
       await tester.ensureVisible(name);
@@ -395,8 +477,9 @@ void main() {
       for (final invalid in ['', '0', '101', '1.5', '-1', 'abc']) {
         await tester.ensureVisible(count);
         await tester.enterText(count, invalid);
-        await tester.tap(find.text('Tạo câu hỏi với AI'));
-        await tester.pumpAndSettle();
+        tester.testTextInput.hide();
+        FocusManager.instance.primaryFocus?.unfocus();
+        await tapVisible(tester, find.text('Tạo câu hỏi với AI'));
         expect(
           find.text('Vui lòng nhập số nguyên từ 1 đến 100.'),
           findsOneWidget,
@@ -405,15 +488,107 @@ void main() {
       }
       await tester.ensureVisible(count);
       await tester.enterText(count, '1');
-      await tester.tap(find.text('Tạo câu hỏi với AI'));
-      await tester.pumpAndSettle();
+      tester.testTextInput.hide();
+      FocusManager.instance.primaryFocus?.unfocus();
+      await tapVisible(tester, find.text('Tạo câu hỏi với AI'));
       expect(submissions.single['count'], 1);
       expect(submissions.single['name'], 'Tên tài liệu đã đặt');
       expect(submissions.single['documentId'], 'document-one');
       expect(submissions.single['instructions'], '');
+      expect(submissions.single['difficulty'], 'auto');
+      expect(submissions.single['mode'], 'practice');
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets('difficulty and mode sheets select, dismiss and submit choices', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    for (final size in [const Size(320, 740), const Size(1280, 900)]) {
+      tester.view.physicalSize = size;
+      await open(tester, DocumentScreen(c: controller, document: document()));
+      final difficulty = find.byKey(const ValueKey('difficulty-picker'));
+      final mode = find.byKey(const ValueKey('mode-picker'));
+      await tapVisible(tester, difficulty);
+      expect(find.text('Chọn độ khó'), findsOneWidget);
+      expect(
+        tester
+            .widget<ListTile>(find.widgetWithText(ListTile, 'Tự động').last)
+            .selected,
+        isTrue,
+      );
+      for (final label in ['Dễ', 'Trung bình', 'Khó']) {
+        await tester.tap(find.widgetWithText(ListTile, label).last);
+        await tester.pumpAndSettle();
+        expect(find.text('Chọn độ khó'), findsOneWidget);
+        await tester.tap(find.text('Áp dụng'));
+        await tester.pumpAndSettle();
+        expect(find.text('Chọn độ khó'), findsNothing);
+        expect(
+          find.descendant(of: difficulty, matching: find.text(label)),
+          findsOneWidget,
+        );
+        await tapVisible(tester, difficulty);
+        expect(
+          tester
+              .widget<ListTile>(find.widgetWithText(ListTile, label).last)
+              .selected,
+          isTrue,
+        );
+      }
+      await tester.tap(find.widgetWithText(ListTile, 'Dễ').last);
+      await tester.pumpAndSettle();
+      Navigator.of(tester.element(find.text('Chọn độ khó'))).pop();
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(of: difficulty, matching: find.text('Khó')),
+        findsOneWidget,
+      );
+      await tapVisible(tester, mode);
+      expect(find.text('Chọn chế độ'), findsOneWidget);
+      await tester.tap(find.widgetWithText(ListTile, 'Kiểm tra'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Áp dụng'));
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(of: mode, matching: find.text('Kiểm tra')),
+        findsOneWidget,
+      );
+      tester.testTextInput.hide();
+      FocusManager.instance.primaryFocus?.unfocus();
+      await tapVisible(tester, find.text('Tạo câu hỏi với AI'));
+      expect(submissions.last['difficulty'], 'hard');
+      expect(submissions.last['mode'], 'exam');
+      expect(tester.takeException(), isNull);
+    }
+  });
+
+  testWidgets('create action stays fixed while configuration scrolls', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    for (final width in [320.0, 393.0, 1280.0]) {
+      await tester.pumpWidget(const SizedBox.shrink());
+      tester.view.physicalSize = Size(width, 852);
+      await open(tester, DocumentScreen(c: controller, document: document()));
+      final action = find.text('Tạo câu hỏi với AI');
+      final before = tester.getRect(action);
+      expect(action.hitTestable(), findsOneWidget);
+      final scroll = tester.state<ScrollableState>(
+        find.byType(Scrollable).first,
+      );
+      scroll.position.jumpTo(scroll.position.maxScrollExtent);
+      await tester.pumpAndSettle();
+      expect(tester.getRect(action), before);
+      final preview = find.text('Xem lại nội dung tài liệu');
+      expect(preview.hitTestable(), findsOneWidget);
+      expect(tester.getRect(preview).bottom, lessThan(before.top));
+      expect(tester.takeException(), isNull);
+    }
+  });
 
   testWidgets(
     'optional AI instructions can be typed above keyboard and sent trimmed',
@@ -425,7 +600,8 @@ void main() {
         tester.view.viewInsets = const FakeViewPadding();
         await open(tester, DocumentScreen(c: controller, document: document()));
         final input = find.byKey(const ValueKey('generate-instructions'));
-        await tester.ensureVisible(input);
+        await Scrollable.ensureVisible(tester.element(input), alignment: .5);
+        await tester.pumpAndSettle();
         await tester.tap(input);
         tester.view.viewInsets = const FakeViewPadding(bottom: 320);
         await tester.pumpAndSettle();
@@ -439,11 +615,22 @@ void main() {
           tester.getRect(input).bottom,
           lessThanOrEqualTo(size.height - 320),
         );
+        final action = find.text('Tạo câu hỏi với AI');
+        expect(action.hitTestable(), findsOneWidget);
+        expect(
+          tester.getRect(action).bottom,
+          lessThanOrEqualTo(size.height - 320),
+        );
+        expect(
+          tester.getRect(input).bottom,
+          lessThan(tester.getRect(action).top),
+        );
         tester.view.viewInsets = const FakeViewPadding();
         FocusManager.instance.primaryFocus?.unfocus();
         await tester.pumpAndSettle();
-        await tester.tap(find.text('Tạo câu hỏi với AI'));
-        await tester.pumpAndSettle();
+        tester.testTextInput.hide();
+        FocusManager.instance.primaryFocus?.unfocus();
+        await tapVisible(tester, find.text('Tạo câu hỏi với AI'));
         expect(
           submissions.last['instructions'],
           'Tập trung vào ngữ pháp.\nƯu tiên câu hỏi vận dụng.',
@@ -462,14 +649,13 @@ void main() {
       addTearDown(tester.view.resetDevicePixelRatio);
       await open(tester, DocumentScreen(c: controller, document: document()));
       final count = find.byKey(const ValueKey('question-count'));
-      await tester.ensureVisible(find.text('15 câu'));
-      await tester.tap(find.text('15 câu'));
-      await tester.pumpAndSettle();
+      await tapVisible(tester, find.text('15 câu'));
       expect(tester.widget<TextFormField>(count).controller!.text, '15');
       await tester.ensureVisible(count);
       await tester.enterText(count, '100');
-      await tester.tap(find.text('Tạo câu hỏi với AI'));
-      await tester.pumpAndSettle();
+      tester.testTextInput.hide();
+      FocusManager.instance.primaryFocus?.unfocus();
+      await tapVisible(tester, find.text('Tạo câu hỏi với AI'));
       expect(submissions.single['count'], 100);
       expect(tester.takeException(), isNull);
     },

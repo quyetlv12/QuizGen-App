@@ -1,0 +1,9 @@
+# Tạo bộ đề — reference implementation
+
+Reference: `references/create-quiz.png`. Audience: learners configuring a quiz from an existing document. Single column, friendly white/mint surfaces, dark green headings, existing system typography and green gradient primary action. Preserve app tokens rather than substituting a new design system.
+
+At 393 px: 18 px side padding, compact back/title row with existing robot on right, full-width subtitle, selected document card, update heading and outlined name field with count, configuration heading, question-count card with three pill presets/custom numeric field, optional instructions card, gradient create action. Use 12–20 px gaps and rounded 16 px surfaces with mint borders/soft green shadows. Keep existing floating scan menu, not the older plus icon in the reference. Do not draw phone hardware or status bar.
+
+Difficulty/mode and source preview appear in the scrollable form before the primary action. The create action is fixed in a separate footer above the scan navigation; Scaffold resizes it above the keyboard and hides navigation while typing. Keep the footer aligned to the form max width (720 px, 18 px side padding), without adding a background panel behind the floating menu. Existing document replacement is available through the selected document card; name editing only affects generation, preserving the current API contract. Keep errors, busy state, validation, request IDs and keyboard avoidance. At 320 px allow headings to wrap naturally, smaller robot, flexible pill labels; at 800/1280 px constrain form to 720 px. Keyboard hides bottom navigation; fields scroll above the fixed action. Reuse RobotArt/FileBadge/GradientAction/StudyNavigation.
+
+No new mockup required: supplied screenshot is authoritative. Original font and vector icons unavailable; use existing system type and Material equivalents. No exact fidelity percentage claimed.

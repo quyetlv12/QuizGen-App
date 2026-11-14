@@ -143,3 +143,8 @@ Manual design review: 320/393/1280 px captures and iPhone 17 Simulator confirm t
 - Extend Home and results content behind the floating menu. Disable only the bottom SafeArea for these scroll views and retain the navigation-height inset as scroll padding so final actions remain reachable above the menu.
 - Keep the white menu silhouette, curved mint outline, two shadows, scan clearance and animation. No new assets or visual concept.
 - Manual design review on iPhone 17 Simulator confirms loaded content is visible in the central recess and below the menu, without a rectangular background strip. Screenshot: `../verification/floating-menu/iphone-transparent-background.png`.
+
+### Tạo bộ đề theo ảnh mẫu — 14/11/2026
+- Thực hiện bố cục theo [ảnh mẫu](references/create-quiz.png): tiêu đề/robot, tài liệu đã chọn, cập nhật tài liệu, tên tài liệu, số câu hỏi, yêu cầu AI và nút tạo xanh. Xem [quyết định thiết kế](create-quiz.md).
+- Giữ menu scan hiện có, độ khó/chế độ/xem nguồn ở dưới nút tạo. Giữ nền trắng theo giao diện app; không thêm các mảng trang trí ở góc ảnh mẫu.
+- Design review: đối chiếu các bản render 320/393/1280 px và iPhone 17 Simulator; không tràn bố cục, các trường nhập và chức năng cũ được giữ. Xem [kiểm chứng](../verification/create-quiz/verification.md).

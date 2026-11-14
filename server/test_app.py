@@ -19,16 +19,24 @@ import app  # noqa: E402
 
 SOURCE = "QuizMind dùng tài liệu nguồn để tạo câu hỏi có căn cứ và giải thích rõ ràng cho người tự học."
 
+DOCUMENT_ANALYSIS = dict(subject='Công cụ học tập QuizMind', sourceLanguage='vi',
+                         questionLanguage='vi', topics=['Tạo câu hỏi từ tài liệu nguồn'])
+
 
 def question(quote="tài liệu nguồn để tạo câu hỏi"):
     return {
-        "question": "Điều gì được nêu trong tài liệu?",
-        "options": ["Đáp án A", "Đáp án B", "Đáp án C", "Đáp án D"],
+        "question": "QuizMind dùng nguồn nào để tạo câu hỏi có căn cứ?",
+        "options": ["Tài liệu nguồn", "Bình luận mạng xã hội", "Lịch sử mua hàng", "Dữ liệu thời tiết"],
         "correct": 0,
         "page": 1,
         "quote": quote,
-        "explanation": "Đáp án được giải thích dựa trên nội dung nguồn.",
+        "explanation": "QuizMind dùng tài liệu nguồn để tạo câu hỏi có căn cứ và giải thích cho người tự học.",
     }
+
+
+def question_batch(count):
+    return [{**question(), 'question': f'Câu {i}: QuizMind dùng nguồn nào để tạo câu hỏi có căn cứ?'}
+            for i in range(count)]
 
 
 class FakeResponse(io.BytesIO):
@@ -66,13 +74,13 @@ class StoreTests(unittest.TestCase):
 
     def test_validate_quiz_accepts_source_quote_and_cleans_fields(self):
         raw = {"questions": [question()]}
-        clean = app.validate_quiz(raw, [SOURCE], 5)
+        clean = app.validate_quiz(raw, [SOURCE], 1)
         self.assertEqual(clean[0]["quote"], question()["quote"])
         self.assertEqual(clean[0]["question"], question()["question"])
 
     def test_validate_quiz_rejects_whitespace_quote(self):
         with self.assertRaises(app.AppError):
-            app.validate_quiz({"questions": [question(" " * 15)]}, [SOURCE], 5)
+            app.validate_quiz({"questions": [question(" " * 15)]}, [SOURCE], 1)
 
     def test_ai_request_bypasses_environment_proxy(self):
         ProbeHTTPHandler.hosts = []
@@ -159,15 +167,15 @@ class StoreTests(unittest.TestCase):
                 self.assertTrue(fresh)
                 self.assertEqual(job['name'], name)
                 self.assertEqual(json.loads(self.store.file.read_text())['documents'][0]['name'], name)
-                questions = [{**question(), 'question': f'Câu {i}: Điều gì được nêu trong tài liệu?'}
+                questions = [{**question(), 'question': f'Câu {i}: QuizMind dùng nguồn nào để tạo câu hỏi có căn cứ?'}
                              for i in range(count)]
-                response = dict(choices=[dict(message=dict(content=json.dumps(dict(questions=questions))))])
+                response = dict(choices=[dict(message=dict(content=json.dumps(dict(analysis=DOCUMENT_ANALYSIS, questions=questions))))])
                 with patch.object(app, 'CONFIG') as config, patch.object(app, 'ai_request', return_value=response) as ai:
                     config.read_text.return_value = '{"model": "fixture-model"}'
                     self.store.process(job, body)
                 self.assertEqual(self.store.current_job(job)['stage'], 'ready')
                 payload = ai.call_args.args[1]
-                self.assertIn(f'Tạo tối đa {count} câu', payload['messages'][0]['content'])
+                self.assertIn(f'Tạo đúng {count} câu', payload['messages'][0]['content'])
                 self.assertEqual(payload['max_tokens'], budget)
                 quiz = self.store.state['quizzes'][0]
                 self.assertEqual(quiz['title'], name)
@@ -176,6 +184,32 @@ class StoreTests(unittest.TestCase):
         restarted = app.Store(self.tmp.name)
         self.assertEqual(restarted.state['documents'][0]['name'], 'Đề 100 😀')
         self.assertEqual([q['title'] for q in restarted.state['quizzes']], ['Đề 100 😀', 'Đề 31 😀', 'Đề 7 😀', 'Đề 1 😀'])
+
+    def test_generate_difficulty_mode_validation_and_payload(self):
+        for field in ('difficulty', 'mode'):
+            for value in (None, 42, [], {}, 'invalid'):
+                body = self.seed_document()
+                before = copy.deepcopy(self.store.state)
+                with self.subTest(field=field, value=value), self.assertRaises(app.AppError):
+                    self.store.new_job({**body, field: value}, 'generate')
+                self.assertEqual(self.store.state, before)
+        for index, (difficulty, phrase) in enumerate((('auto', 'Tự điều chỉnh độ khó'), ('easy', 'Độ khó dễ'), ('medium', 'Độ khó trung bình'), ('hard', 'Độ khó khó'))):
+            body = {**self.seed_document(), 'requestId': f'options-{index}'}
+            if index:
+                body.update(difficulty=difficulty, mode='exam')
+            job, _ = self.store.new_job(body, 'generate')
+            response = dict(choices=[dict(message=dict(content=json.dumps(dict(analysis=DOCUMENT_ANALYSIS, questions=question_batch(body['count'])))))])
+            with patch.object(app, 'CONFIG') as config, patch.object(app, 'ai_request', return_value=response) as ai:
+                config.read_text.return_value = '{"model":"fixture"}'
+                self.store.process(job, body)
+            self.assertEqual(self.store.current_job(job)['stage'], 'ready')
+            self.assertIn(phrase, ai.call_args.args[1]['messages'][0]['content'])
+            quiz = self.store.state['quizzes'][0]
+            self.assertEqual(quiz['difficulty'], difficulty)
+            self.assertEqual(quiz['mode'], 'exam' if index else 'practice')
+        restarted = app.Store(self.tmp.name)
+        self.assertEqual(restarted.state['quizzes'][0]['mode'], 'exam')
+        self.assertEqual(restarted.state['quizzes'][0]['difficulty'], 'hard')
 
     def test_generate_optional_instructions_validation_and_ai_payload(self):
         for instructions in (None, 42, [], 'x' * 2001):
@@ -187,7 +221,7 @@ class StoreTests(unittest.TestCase):
         for index, instructions in enumerate(('', '   ', '  Tập trung vào ngữ pháp.  ', 'x' * 2000)):
             body = {**self.seed_document(), 'requestId': f'instructions-{index}', 'instructions': instructions}
             job, _ = self.store.new_job(body, 'generate')
-            response = dict(choices=[dict(message=dict(content=json.dumps(dict(questions=[question()]))))])
+            response = dict(choices=[dict(message=dict(content=json.dumps(dict(analysis=DOCUMENT_ANALYSIS, questions=question_batch(body['count'])))))])
             with patch.object(app, 'CONFIG') as config, patch.object(app, 'ai_request', return_value=response) as ai:
                 config.read_text.return_value = '{"model":"fixture"}'
                 self.store.process(job, body)
@@ -198,6 +232,43 @@ class StoreTests(unittest.TestCase):
                 self.assertEqual(messages[1], dict(role='user', content='Yêu cầu bổ sung: ' + instructions.strip()))
             self.assertEqual(json.loads(messages[-1]['content']), [dict(page=1, text=SOURCE)])
             self.assertIn('Chỉ dùng dữ kiện trong nguồn', messages[0]['content'])
+
+    def test_document_and_chat_send_standalone_question_rules_and_preserve_context(self):
+        source = 'Nước sôi ở 100 °C dưới áp suất 1 atm.'
+        explicit = {
+            'question': 'Ở áp suất 1 atm, nước sôi ở nhiệt độ bao nhiêu?',
+            'options': ['100 °C', '0 °C', '50 °C', '200 °C'],
+            'correct': 0, 'page': 1, 'quote': source,
+            'explanation': 'Ở áp suất 1 atm, nhiệt độ sôi của nước là 100 °C.',
+        }
+        for kind in ('generate', 'chat'):
+            with self.subTest(kind=kind):
+                body = {**self.seed_document(), 'requestId': f'clear-question-{kind}',
+                        'count': 1, 'instructions': 'Tạo câu hỏi dễ hiểu về nhiệt độ sôi.',
+                        'prompt': 'Tạo câu hỏi về nhiệt độ sôi của nước ở áp suất 1 atm.'}
+                self.store.document('doc-123')['pages'] = [source]
+                self.store.save()
+                job, _ = self.store.new_job(body, kind)
+                response = dict(choices=[dict(message=dict(content=json.dumps({'analysis': DOCUMENT_ANALYSIS, 'questions': [explicit]})))])
+                with patch.object(app, 'CONFIG') as config, patch.object(app, 'ai_request', return_value=response) as ai:
+                    config.read_text.return_value = '{"model":"fixture"}'
+                    self.store.process(job, body)
+                ai.assert_called_once()
+                messages = ai.call_args.args[1]['messages']
+                self.assertEqual(messages[0]['role'], 'system')
+                self.assertIn(app.QUESTION_WRITING_RULES, messages[0]['content'])
+                self.assertEqual(self.store.current_job(job)['stage'], 'ready')
+                saved = self.store.state['quizzes'][0]['questions'][0]
+                self.assertEqual(saved['question'], explicit['question'])
+                self.assertEqual(saved['options'], explicit['options'])
+                self.assertEqual(saved['explanation'], explicit['explanation'])
+                if kind == 'generate':
+                    self.assertEqual(saved['quote'], source)
+                    self.assertEqual(json.loads(messages[-1]['content']), [dict(page=1, text=source)])
+                    self.assertEqual(messages[1]['content'], 'Yêu cầu bổ sung: ' + body['instructions'])
+                else:
+                    self.assertEqual(messages[-1]['content'], body['prompt'])
+                    self.assertEqual(saved['sourceType'], 'ai')
 
     def test_generate_retry_and_active_dedupe_do_not_rename_or_resubmit(self):
         body = self.seed_document()
@@ -213,7 +284,7 @@ class StoreTests(unittest.TestCase):
             self.store.new_job(body, 'import')
         with patch.object(app, 'CONFIG') as config, patch.object(app, 'ai_request') as ai:
             config.read_text.return_value = '{}'
-            ai.return_value = dict(choices=[dict(message=dict(content=json.dumps({'questions': [question()]})))])
+            ai.return_value = dict(choices=[dict(message=dict(content=json.dumps({'analysis': DOCUMENT_ANALYSIS, 'questions': question_batch(body['count'])})))])
             self.store.process(job, body)
             ai.assert_called_once()
         ready = copy.deepcopy(self.store.state)
@@ -275,7 +346,7 @@ class StoreTests(unittest.TestCase):
         for valid in (True, False):
             with self.subTest(valid=valid):
                 job, _ = self.store.new_job({**body, 'requestId': f'chat-complete-{valid}'}, 'chat')
-                raw = dict(questions=[question()])
+                raw = dict(analysis=DOCUMENT_ANALYSIS, questions=question_batch(body['count']))
                 if not valid:
                     raw['questions'][0]['options'] = ['A', 'A', 'B', 'C']
                 response = dict(choices=[dict(message=dict(content=json.dumps(raw)))])
@@ -302,7 +373,7 @@ class StoreTests(unittest.TestCase):
 
         with patch.object(app, 'CONFIG') as config, patch.object(app, 'ai_request') as ai, patch.object(app.os, 'replace', side_effect=fail_quiz_save):
             config.read_text.return_value = '{}'
-            ai.return_value = dict(choices=[dict(message=dict(content=json.dumps({'questions': [question()]})))])
+            ai.return_value = dict(choices=[dict(message=dict(content=json.dumps({'analysis': DOCUMENT_ANALYSIS, 'questions': question_batch(body['count'])})))])
             self.store.process(job, body)
         self.assertEqual(self.store.state['quizzes'], [])
         self.assertEqual(self.store.current_job(job)['stage'], 'failed')
@@ -386,9 +457,9 @@ class AuthTests(unittest.TestCase):
             app.load_auth_token(link)
 
     def test_every_route_requires_auth_before_state_ai_or_mutation(self):
-        for route in ('state', 'health', 'connection', 'import', 'generate', 'chat', 'attempts', 'trash'):
+        for route in ('state', 'health', 'connection', 'import', 'generate', 'chat', 'research', 'attempts', 'trash', 'tags/create', 'tags/rename', 'tags/delete', 'tags/assign'):
             conn = http.client.HTTPConnection(*self.server.server_address, timeout=2)
-            method = 'POST' if route in ('import', 'generate', 'chat', 'attempts', 'trash') else 'GET'
+            method = 'POST' if route in ('import', 'generate', 'chat', 'research', 'attempts', 'trash', 'tags/create', 'tags/rename', 'tags/delete', 'tags/assign') else 'GET'
             conn.request(method, '/api/' + route, body='{}' if method == 'POST' else None,
                          headers={'Host': '127.0.0.1:8787', 'Content-Type': 'application/json'})
             response = conn.getresponse()

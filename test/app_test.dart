@@ -349,6 +349,44 @@ void main() {
     c.dispose();
   });
 
+  testWidgets('exam answers stay neutral without feedback or answer sound', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    final c = AppController(await SharedPreferences.getInstance());
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: appTheme(),
+        home: QuizScreen(c: c, quiz: {...quizFixture(), 'mode': 'exam'}),
+      ),
+    );
+    for (final label in ['Lựa chọn 2', 'Lựa chọn 1']) {
+      await tester.tap(find.text(label));
+      await tester.pump();
+      expect(find.text('Tìm hiểu thêm'), findsNothing);
+      expect(find.text('Chính xác!'), findsNothing);
+      expect(find.text('Chưa chính xác'), findsNothing);
+      expect(find.text('Đáp án đúng: A. Lựa chọn 1'), findsNothing);
+      expect(find.text('Giải thích câu 1'), findsNothing);
+      expect(find.byIcon(Icons.cancel_rounded), findsNothing);
+      expect(
+        audioCalls.any(
+          (call) => call.method == 'resume' || call.method == 'setSourceUrl',
+        ),
+        isFalse,
+      );
+    }
+    await tester.tap(find.text('Câu tiếp theo'));
+    await tester.pump();
+    await tester.tap(find.text('Câu trước'));
+    await tester.pump();
+    expect(find.text('Giải thích câu 1'), findsNothing);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpAndSettle();
+    c.dispose();
+  });
+
   testWidgets('answers show immediate feedback and preserve it on return', (
     tester,
   ) async {
@@ -365,6 +403,7 @@ void main() {
     expect(audioCalls, isEmpty);
     await tester.tap(find.text('Lựa chọn 2'));
     await tester.pump();
+    expect(find.text('Tìm hiểu thêm'), findsOneWidget);
     expect(find.text('Chưa chính xác'), findsOneWidget);
     expect(find.text('Đáp án đúng: A. Lựa chọn 1'), findsOneWidget);
     expect(find.text('Giải thích câu 1'), findsOneWidget);
@@ -383,6 +422,7 @@ void main() {
     expect(find.text('Đáp án đúng: A. Lựa chọn 1'), findsNothing);
     await tester.tap(find.text('Lựa chọn 1'));
     await tester.pump();
+    expect(find.text('Tìm hiểu thêm'), findsOneWidget);
     expect(find.text('Chính xác!'), findsOneWidget);
     expect(
       audioCalls.where((c) => c.method == 'setSourceUrl').last.arguments['url'],
@@ -392,6 +432,7 @@ void main() {
     await tester.pump(const Duration(seconds: 2));
     await tester.tap(find.text('Câu trước'));
     await tester.pump();
+    expect(find.text('Tìm hiểu thêm'), findsOneWidget);
     expect(find.text('Chưa chính xác'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
     await tester.pumpWidget(
@@ -400,11 +441,13 @@ void main() {
         home: QuizScreen(c: c, quiz: quizFixture()),
       ),
     );
+    expect(find.text('Tìm hiểu thêm'), findsOneWidget);
     expect(find.text('Chưa chính xác'), findsOneWidget);
     expect(audioCalls.where((c) => c.method == 'resume').length, playCount);
     audioFails = true;
     await tester.tap(find.text('Lựa chọn 1'));
     await tester.pumpAndSettle();
+    expect(find.text('Tìm hiểu thêm'), findsOneWidget);
     expect(find.text('Chính xác!'), findsOneWidget);
     expect(jsonDecode(c.prefs.getString('draft-review-quiz')!)['answers'], [
       0,

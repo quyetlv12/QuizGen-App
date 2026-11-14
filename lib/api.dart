@@ -5,6 +5,7 @@ import 'dart:io';
 import 'task_progress.dart';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -22,6 +23,8 @@ class ApiException implements Exception {
 class LocalApi {
   String base;
   String? token;
+  String? session;
+  void Function()? onSessionExpired;
   final http.Client client;
   LocalApi(this.base, {this.token, http.Client? client})
     : client = client ?? http.Client();
@@ -56,6 +59,7 @@ class LocalApi {
     try {
       final requestBase = base;
       final requestToken = token;
+      final requestSession = session;
       final uri = Uri.parse(
         '${requestBase.replaceAll(RegExp(r'/$'), '')}$path',
       );
@@ -65,10 +69,13 @@ class LocalApi {
       if (requestToken != null && requestToken.isNotEmpty) {
         req.headers['Authorization'] = 'Bearer $requestToken';
       }
+      if (requestSession != null) {
+        req.headers['X-QuizMind-Session'] = requestSession;
+      }
       if (body != null) req.body = jsonEncode(body);
       final response = await (() async {
         return http.Response.fromStream(await client.send(req));
-      })().timeout(const Duration(seconds: 25));
+      })().timeout(Duration(seconds: path == '/api/research' ? 140 : 25));
       dynamic data;
       try {
         data = jsonDecode(utf8.decode(response.bodyBytes));
@@ -76,6 +83,11 @@ class LocalApi {
         if (response.statusCode >= 200 && response.statusCode < 300) rethrow;
       }
       if (response.statusCode < 200 || response.statusCode >= 300) {
+        if (response.statusCode == 403 &&
+            requestSession != null &&
+            requestSession == session) {
+          onSessionExpired?.call();
+        }
         throw ApiException(
           data is Map && data['error'] is String
               ? data['error']
@@ -89,7 +101,9 @@ class LocalApi {
       rethrow;
     } on TimeoutException {
       throw ApiException(
-        'Dịch vụ phản hồi chậm. Kiểm tra tác vụ trên Trang chủ trước khi thử lại.',
+        path == '/api/research'
+            ? 'Tra cứu quá thời gian chờ. Hãy đợi một lúc rồi thử lại.'
+            : 'Dịch vụ phản hồi chậm. Kiểm tra tác vụ trên Trang chủ trước khi thử lại.',
       );
     } on SocketException {
       throw ApiException(
@@ -115,6 +129,163 @@ class JobNotice {
 
 class AppController extends ChangeNotifier {
   final SharedPreferences prefs;
+  final bool requireAccount;
+  final FlutterSecureStorage secureStorage;
+  Json? user;
+  bool restoringAccount = false;
+  String? accountError;
+  Future<void> _storageWork = Future.value();
+  String get _sessionKey => 'quizmind-session-${LocalApi.origin(api.base)}';
+  String localKey(String key) => requireAccount
+      ? '${LocalApi.origin(api.base)}:${user?['id'] ?? 'signed-out'}:$key'
+      : key;
+
+  Future<void> _saveSession(String key, String? value) {
+    final operation = _storageWork.then(
+      (_) => value == null
+          ? secureStorage.delete(key: key)
+          : secureStorage.write(key: key, value: value),
+    );
+    _storageWork = operation.catchError((Object _) {});
+    return operation;
+  }
+
+  void _clearAccount() {
+    timer?.cancel();
+    user = null;
+    api.session = null;
+    connectionGeneration++;
+    state = {'documents': [], 'quizzes': [], 'jobs': [], 'attempts': []};
+    connected = false;
+    refreshing = false;
+    authenticationRequired = false;
+    _refreshGeneration = null;
+    _hasLoadedState = false;
+    _jobNotice = null;
+    _pendingActions.clear();
+    _syncProgress(reset: true);
+  }
+
+  void _expireAccount() {
+    if (!requireAccount || closed) return;
+    final key = _sessionKey;
+    _clearAccount();
+    accountError = 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.';
+    unawaited(_saveSession(key, null).catchError((Object _) {}));
+    notifyListeners();
+  }
+
+  Future<void> restoreAccount() async {
+    if (restoringAccount || closed) return;
+    restoringAccount = true;
+    accountError = null;
+    notifyListeners();
+    final generation = connectionGeneration;
+    try {
+      await _storageWork;
+      final saved = await secureStorage.read(key: _sessionKey);
+      if (closed || generation != connectionGeneration) return;
+      if (saved != null) {
+        api.session = saved;
+        final result = await api.request('/api/auth/me');
+        if (closed || generation != connectionGeneration) return;
+        user = _accountUser(result['user']);
+      }
+    } catch (e) {
+      if (!closed && generation == connectionGeneration) {
+        api.session = null;
+        accountError = e is ApiException
+            ? e.toString()
+            : 'Không đọc được phiên đã lưu. Hãy thử lại hoặc đăng nhập.';
+      }
+    } finally {
+      restoringAccount = false;
+      if (!closed) {
+        notifyListeners();
+        if (user != null) _startPolling();
+      }
+    }
+  }
+
+  Json _accountUser(dynamic value) {
+    if (value is! Json ||
+        value['id'] is! String ||
+        value['email'] is! String ||
+        value['name'] is! String ||
+        !['user', 'teacher', 'student'].contains(value['role'])) {
+      throw ApiException('Thông tin tài khoản không hợp lệ.');
+    }
+    return value;
+  }
+
+  Future<void> authenticate({
+    required String email,
+    required String password,
+    String? name,
+    String role = 'user',
+  }) async {
+    final generation = connectionGeneration;
+    final key = _sessionKey;
+    final result = await api.request(
+      name == null ? '/api/auth/login' : '/api/auth/register',
+      {
+        'email': email.trim(),
+        'password': password,
+        if (name != null) 'name': name.trim(),
+        if (name != null) 'role': role,
+      },
+    );
+    final nextUser = _accountUser(result['user']);
+    final session = result['session'];
+    if (session is! String ||
+        !RegExp(r'^[A-Za-z0-9_-]{43}$').hasMatch(session)) {
+      throw ApiException('Phiên đăng nhập không hợp lệ.');
+    }
+    if (closed || generation != connectionGeneration) return;
+    try {
+      await _saveSession(key, session);
+    } catch (_) {
+      throw ApiException(
+        'Không lưu được phiên an toàn trên thiết bị. Hãy thử đăng nhập lại.',
+      );
+    }
+    if (closed || generation != connectionGeneration) return;
+    _clearAccount();
+    user = nextUser;
+    api.session = session;
+    accountError = null;
+    error = null;
+    notifyListeners();
+    _startPolling();
+  }
+
+  Future<void> logout() async {
+    final key = _sessionKey;
+    // Capture credentials before clearing state; never send logout for a later account.
+    final revoke = api.request('/api/auth/logout', {}).then<void>((_) {});
+    // Attach a handler immediately while secure storage is being cleared.
+    final revocation = revoke.then<Object?>(
+      (_) => null,
+      onError: (Object e) => e,
+    );
+    _clearAccount();
+    accountError = null;
+    notifyListeners();
+
+    Object? failure;
+    try {
+      await _saveSession(key, null);
+    } catch (e) {
+      failure = e;
+    }
+    final revokeFailure = await revocation;
+    failure ??= revokeFailure;
+    if (failure != null && !closed && user == null) {
+      accountError = 'Đã thoát trên ứng dụng; chưa xác nhận xóa phiên đã lưu hoặc thu hồi trên dịch vụ. Hãy thử lại.';
+      notifyListeners();
+    }
+  }
+
   final TaskProgress taskProgress;
   final Map<Object, String> _pendingActions = {};
   late final LocalApi api;
@@ -128,8 +299,14 @@ class AppController extends ChangeNotifier {
   Completer<void>? _refreshDone;
   JobNotice? _jobNotice;
   bool _hasLoadedState = false;
-  AppController(this.prefs, {LocalApi? api, TaskProgress? taskProgress})
-    : taskProgress = taskProgress ?? TaskProgress() {
+  AppController(
+    this.prefs, {
+    LocalApi? api,
+    TaskProgress? taskProgress,
+    this.requireAccount = false,
+    FlutterSecureStorage? secureStorage,
+  }) : secureStorage = secureStorage ?? const FlutterSecureStorage(),
+       taskProgress = taskProgress ?? TaskProgress() {
     this.api =
         api ??
         LocalApi(
@@ -138,8 +315,10 @@ class AppController extends ChangeNotifier {
               : (prefs.getString('relay') ?? 'http://127.0.0.1:8787'),
           token: _builtInRelayToken.isNotEmpty ? _builtInRelayToken : null,
         );
+    this.api.onSessionExpired = _expireAccount;
   }
-  List<Json> items(String key) => (state[key] as List).cast<Json>();
+  List<Json> items(String key) =>
+      ((state[key] as List?) ?? const []).cast<Json>();
   JobNotice? takeJobNotice() {
     final notice = _jobNotice;
     _jobNotice = null;
@@ -159,6 +338,14 @@ class AppController extends ChangeNotifier {
   }
 
   void start() {
+    if (requireAccount) {
+      unawaited(restoreAccount());
+    } else {
+      _startPolling();
+    }
+  }
+
+  void _startPolling() {
     timer?.cancel();
     timer = Timer.periodic(const Duration(seconds: 3), (_) => refresh());
     refresh();
@@ -167,7 +354,8 @@ class AppController extends ChangeNotifier {
   Future<void> refresh() async {
     if (_refreshGeneration == connectionGeneration ||
         closed ||
-        authenticationRequired) {
+        authenticationRequired ||
+        (requireAccount && user == null)) {
       return;
     }
     refreshing = true;
@@ -294,13 +482,14 @@ class AppController extends ChangeNotifier {
       _jobNotice = null;
       _hasLoadedState = false;
     }
+    if (changed && requireAccount) _clearAccount();
     api.base = canonical;
     api.token = nextToken == null || nextToken.isEmpty ? null : nextToken;
     authenticationRequired = false;
     final generation = connectionGeneration;
     notifyListeners();
     await prefs.setString('relay', canonical);
-    if (changed) {
+    if (changed && !requireAccount) {
       for (final key in prefs.getKeys().where(
         (key) => key.startsWith('draft-'),
       )) {
@@ -308,6 +497,10 @@ class AppController extends ChangeNotifier {
       }
     }
     if (closed || generation != connectionGeneration) return;
+    if (requireAccount && user == null) {
+      await restoreAccount();
+      return;
+    }
     timer?.cancel();
     timer = Timer.periodic(const Duration(seconds: 3), (_) => refresh());
     await refresh();

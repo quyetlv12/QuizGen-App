@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' as ui;
 
+import 'package:camera_platform_interface/camera_platform_interface.dart';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -15,7 +17,7 @@ import 'package:quizmind/theme.dart';
 import 'package:quizmind/ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'document_options_test.dart' show FixturePicker;
+import 'document_options_test.dart' show FixturePicker, NoCamera;
 
 void main() {
   late AppController controller;
@@ -115,6 +117,105 @@ void main() {
     await tester.tap(find.text('Cập nhật tài liệu'));
     await tester.pumpAndSettle();
   }
+
+  testWidgets(
+    'document sheet replaces via upload and cancel preserves source',
+    (tester) async {
+      await open(tester, const Size(320, 740));
+      // Return from the existing direct-update entry to the source screen.
+      await tester.tap(find.byTooltip('Quay lại'));
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(
+        find.byKey(const ValueKey('document-details')),
+        -180,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('document-details')));
+      await tester.pumpAndSettle();
+      expect(find.text('Thay thế tài liệu'), findsOneWidget);
+      expect(find.text('Quét tài liệu mới'), findsOneWidget);
+      expect(find.text('Tải tài liệu mới'), findsOneWidget);
+      expect(find.text('Ẩn tài liệu'), findsOneWidget);
+      await tester.tap(find.byTooltip('Đóng'));
+      await tester.pumpAndSettle();
+      expect(posts, isEmpty);
+      expect(document['pages'], ['Nội dung tài liệu ban đầu.']);
+      picker.result = FilePickerResult([
+        PlatformFile(
+          name: 'new.txt',
+          size: 3,
+          bytes: Uint8List.fromList([65, 66, 67]),
+        ),
+      ]);
+      await tester.scrollUntilVisible(
+        find.byKey(const ValueKey('document-details')),
+        -180,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('document-details')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Tải tài liệu mới'));
+      await tester.pumpAndSettle();
+      expect(find.byType(ImportScreen), findsOneWidget);
+      await tester.scrollUntilVisible(
+        find.text('1. new.txt'),
+        200,
+        scrollable: find
+            .descendant(
+              of: find.byType(ImportScreen),
+              matching: find.byType(Scrollable),
+            )
+            .first,
+      );
+      expect(find.text('1. new.txt'), findsOneWidget);
+      expect(posts, isEmpty); // Review before submitting the replacement.
+      await tester.scrollUntilVisible(
+        find.text('Đọc và cập nhật tài liệu'),
+        200,
+        scrollable: find
+            .descendant(
+              of: find.byType(ImportScreen),
+              matching: find.byType(Scrollable),
+            )
+            .first,
+      );
+      await tester.tap(find.text('Đọc và cập nhật tài liệu'));
+      await tester.pumpAndSettle();
+      expect(posts.single.url.path, '/api/update');
+      expect(jsonDecode(posts.single.body)['documentId'], document['id']);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('replacement scanner opens and cancel does not update', (
+    tester,
+  ) async {
+    final original = CameraPlatform.instance;
+    CameraPlatform.instance = NoCamera();
+    addTearDown(() => CameraPlatform.instance = original);
+    await open(tester, const Size(393, 852));
+    await tester.tap(find.byTooltip('Quay lại'));
+    await tester.pumpAndSettle();
+    final details = find.byKey(const ValueKey('document-details'));
+    await tester.scrollUntilVisible(
+      details,
+      -180,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(details);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Quét tài liệu mới'));
+    await tester.pumpAndSettle();
+    expect(find.byType(ScanScreen), findsOneWidget);
+    await tester.tap(find.byTooltip('Quay lại'));
+    await tester.pumpAndSettle();
+    expect(find.byType(DocumentScreen), findsOneWidget);
+    expect(posts, isEmpty);
+    expect(tester.takeException(), isNull);
+  });
 
   Future<void> selectFile(WidgetTester tester) async {
     picker.result = FilePickerResult([
@@ -218,6 +319,9 @@ void main() {
     expect(find.text('1. replacement.txt'), findsOneWidget);
     expect(find.text('Không gửi được bản cập nhật'), findsOneWidget);
     expect(posts, hasLength(1));
+    await tester.pump(const Duration(seconds: 6));
+    await tester.pumpAndSettle();
+    expect(find.text('Không gửi được bản cập nhật'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 }

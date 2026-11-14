@@ -85,7 +85,7 @@ class DocumentUpdateTests(unittest.TestCase):
         self.update()
         body = dict(requestId='generate-001', documentId='one', name='New quiz', count=1)
         job, _ = self.store.new_job(body, 'generate')
-        response = dict(choices=[dict(message=dict(content=json.dumps(dict(questions=[question()]))))])
+        response = dict(choices=[dict(message=dict(content=json.dumps(dict(analysis=dict(subject='QuizMind', sourceLanguage='vi', questionLanguage='vi', topics=['Tài liệu nguồn']), questions=[question()]))))])
         with patch.object(app, 'CONFIG') as config, patch.object(app, 'ai_request', return_value=response) as ai:
             config.read_text.return_value = '{}'
             self.store.process(job, body)

@@ -5,6 +5,100 @@ import 'package:flutter/material.dart';
 
 import 'theme.dart';
 
+final _activeToasts = Expando<VoidCallback>();
+
+void showAppToast(
+  BuildContext context,
+  String message, {
+  bool success = false,
+  Duration duration = const Duration(seconds: 6),
+}) {
+  final overlay = Overlay.maybeOf(context, rootOverlay: true);
+  if (overlay == null) return;
+  _activeToasts[overlay]?.call();
+  late final OverlayEntry entry;
+  Timer? timer;
+  var dismissed = false;
+  void dismiss() {
+    if (dismissed) return;
+    dismissed = true;
+    timer?.cancel();
+    entry.remove();
+    entry.dispose();
+    _activeToasts[overlay] = null;
+  }
+
+  entry = OverlayEntry(
+    builder: (context) => Positioned(
+      top: 0,
+      left: 0,
+      right: 0,
+      child: SafeArea(
+        bottom: false,
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: 608,
+                maxHeight: MediaQuery.sizeOf(context).height * .35,
+              ),
+              child: Semantics(
+                liveRegion: true,
+                child: Material(
+                  key: const ValueKey('app-toast'),
+                  color: success ? forest : Colors.deepOrange.shade800,
+                  elevation: 6,
+                  borderRadius: BorderRadius.circular(14),
+                  clipBehavior: Clip.antiAlias,
+                  child: SingleChildScrollView(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 8, 4, 8),
+                      child: Row(
+                        children: [
+                          Icon(
+                            success
+                                ? Icons.check_circle_outline
+                                : Icons.error_outline,
+                            color: Colors.white,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              message,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            tooltip: 'Đóng thông báo',
+                            onPressed: dismiss,
+                            icon: const Icon(
+                              Icons.close,
+                              color: Colors.white,
+                              size: 20,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+  _activeToasts[overlay] = dismiss;
+  overlay.insert(entry);
+  timer = Timer(duration, dismiss);
+}
+
 class AiThinkingIndicator extends StatefulWidget {
   const AiThinkingIndicator({super.key});
 
@@ -373,11 +467,6 @@ class _AiRobotBadge extends StatelessWidget {
               border: Border.all(color: const Color(0xFF0AC525), width: 2.5),
               boxShadow: const [
                 BoxShadow(
-                  color: Color(0x665AFF29),
-                  blurRadius: 18,
-                  spreadRadius: 4,
-                ),
-                BoxShadow(
                   color: Color(0x26006C39),
                   blurRadius: 6,
                   offset: Offset(0, 4),
@@ -534,6 +623,171 @@ class GradientAction extends StatelessWidget {
   );
 }
 
+/// Shared sheet surface keeps every modal aligned with the selection design.
+Future<T?> showAppSheet<T>({
+  required BuildContext context,
+  required WidgetBuilder builder,
+}) => showModalBottomSheet<T>(
+  context: context,
+  isScrollControlled: true,
+  useSafeArea: true,
+  backgroundColor: Colors.white,
+  barrierColor: Colors.black54,
+  constraints: const BoxConstraints(maxWidth: 640),
+  shape: const RoundedRectangleBorder(
+    borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+  ),
+  clipBehavior: Clip.antiAlias,
+  builder: builder,
+);
+
+class AppSheetBody extends StatelessWidget {
+  const AppSheetBody({super.key, required this.children});
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) => Stack(
+    children: [
+      Positioned(
+        top: 20,
+        right: 0,
+        child: ExcludeSemantics(
+          child: CustomPaint(size: const Size(300, 100), painter: _SheetWave()),
+        ),
+      ),
+      SafeArea(
+        top: false,
+        child: SingleChildScrollView(
+          padding: EdgeInsets.fromLTRB(
+            16,
+            14,
+            16,
+            24 + MediaQuery.viewInsetsOf(context).bottom,
+          ),
+          child: SizedBox(
+            width: double.infinity,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 34,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF9CA6A1),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                ...children,
+              ],
+            ),
+          ),
+        ),
+      ),
+    ],
+  );
+}
+
+class _SheetWave extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..color = green.withValues(alpha: .035);
+    canvas.drawPath(
+      Path()
+        ..moveTo(0, size.height)
+        ..cubicTo(100, 90, 140, 5, 300, 28)
+        ..lineTo(300, 100)
+        ..close(),
+      paint,
+    );
+    canvas.drawPath(
+      Path()
+        ..moveTo(75, size.height)
+        ..cubicTo(170, 75, 220, 0, 300, 5)
+        ..lineTo(300, 100)
+        ..close(),
+      paint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _SheetWave oldDelegate) => false;
+}
+
+class SheetOptionCard extends StatelessWidget {
+  const SheetOptionCard({
+    super.key,
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    required this.onTap,
+    this.selected = false,
+    this.isChoice = false,
+  });
+  final String title, subtitle;
+  final IconData icon;
+  final VoidCallback onTap;
+  final bool selected, isChoice;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(bottom: 8),
+    child: Material(
+      color: selected
+          ? const Color(0xFFE7FAED)
+          : Colors.white.withValues(alpha: .85),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: selected ? const Color(0xFFA5DDB5) : line),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: ListTile(
+        selected: selected,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        minLeadingWidth: 38,
+        horizontalTitleGap: 14,
+        leading: Container(
+          width: 38,
+          height: 40,
+          decoration: BoxDecoration(
+            color: mint,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Icon(icon, color: green, size: 25),
+        ),
+        title: Text(
+          title,
+          style: TextStyle(
+            color: selected ? green : ink,
+            fontSize: 16,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        subtitle: Padding(
+          padding: const EdgeInsets.only(top: 3),
+          child: Text(
+            subtitle,
+            style: const TextStyle(color: muted, fontSize: 13, height: 1.4),
+          ),
+        ),
+        trailing: Icon(
+          isChoice
+              ? (selected
+                    ? Icons.check_circle_rounded
+                    : Icons.radio_button_unchecked)
+              : Icons.chevron_right_rounded,
+          color: selected ? green : const Color(0xFF99AAA3),
+          size: 24,
+        ),
+        onTap: onTap,
+      ),
+    ),
+  );
+}
+
 class SectionTitle extends StatelessWidget {
   final String title;
   final IconData icon;
@@ -635,6 +889,7 @@ class StudyRow extends StatelessWidget {
   final Widget leading;
   final String title, subtitle;
   final Widget? badge;
+  final Widget? footer;
   final VoidCallback onTap;
   const StudyRow({
     super.key,
@@ -643,6 +898,7 @@ class StudyRow extends StatelessWidget {
     required this.subtitle,
     required this.onTap,
     this.badge,
+    this.footer,
   });
   @override
   Widget build(BuildContext context) => Padding(
@@ -690,6 +946,10 @@ class StudyRow extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(fontSize: 12, color: muted),
                       ),
+                      if (footer != null) ...[
+                        const SizedBox(height: 8),
+                        footer!,
+                      ],
                     ],
                   ),
                 ),
@@ -707,18 +967,24 @@ class StudyRow extends StatelessWidget {
 
 class StatusPill extends StatelessWidget {
   final String text;
-  const StatusPill(this.text, {super.key});
+  final Color backgroundColor, textColor;
+  const StatusPill(
+    this.text, {
+    super.key,
+    this.backgroundColor = const Color(0xFFDDFDE3),
+    this.textColor = const Color(0xFF006B16),
+  });
   @override
   Widget build(BuildContext context) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
     decoration: BoxDecoration(
-      color: const Color(0xFFDDFDE3),
+      color: backgroundColor,
       borderRadius: BorderRadius.circular(20),
     ),
     child: Text(
       text,
-      style: const TextStyle(
-        color: Color(0xFF006B16),
+      style: TextStyle(
+        color: textColor,
         fontSize: 12,
         fontWeight: FontWeight.w700,
       ),
