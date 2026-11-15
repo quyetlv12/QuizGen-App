@@ -13,6 +13,29 @@ spec.loader.exec_module(phone)
 
 
 class PhoneTests(unittest.TestCase):
+    def test_watchdog_restarts_after_three_failed_checks(self):
+        child = Mock(poll=Mock(return_value=None))
+        with patch.object(phone, 'remote_ready', return_value=False) as health, \
+                patch.object(phone.time, 'sleep'):
+            with self.assertRaisesRegex(RuntimeError, 'HTTPS lỗi liên tiếp'):
+                phone.supervise('https://example.invalid', 'synthetic', [child], interval=0)
+        self.assertEqual(health.call_count, 3)
+
+    def test_watchdog_resets_failures_after_recovery(self):
+        child = Mock(poll=Mock(return_value=None))
+        checks = [False, False, True, False, False, False]
+        with patch.object(phone, 'remote_ready', side_effect=checks) as health, \
+                patch.object(phone.time, 'sleep'):
+            with self.assertRaisesRegex(RuntimeError, 'HTTPS lỗi liên tiếp'):
+                phone.supervise('https://example.invalid', 'synthetic', [child], interval=0)
+        self.assertEqual(health.call_count, 6)
+
+    def test_watchdog_detects_dead_child_before_health_request(self):
+        with patch.object(phone, 'remote_ready') as health:
+            with self.assertRaisesRegex(RuntimeError, 'đã dừng'):
+                phone.supervise('https://example.invalid', 'synthetic', [Mock(poll=Mock(return_value=1))])
+        health.assert_not_called()
+
     def test_named_tunnel_only_routes_exact_host_and_loopback(self):
         with tempfile.TemporaryDirectory() as folder:
             config = Path(folder) / 'tunnel.json'

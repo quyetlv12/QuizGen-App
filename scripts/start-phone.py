@@ -92,6 +92,24 @@ def remote_ready(url, token):
     return code({}) == 401 and code({'Authorization': 'Bearer ' + token}) == 200
 
 
+def supervise(url, token, children, interval=30, failure_limit=3):
+    failures = 0
+    next_check = time.monotonic() + interval
+    while True:
+        if any(child.poll() is not None for child in children):
+            raise RuntimeError('Backend hoặc tunnel đã dừng; cần khởi động lại dịch vụ.')
+        if time.monotonic() >= next_check:
+            try:
+                healthy = remote_ready(url, token)
+            except (OSError, urllib.error.URLError):
+                healthy = False
+            failures = 0 if healthy else failures + 1
+            if failures >= failure_limit:
+                raise RuntimeError('HTTPS lỗi liên tiếp; khởi động lại backend/tunnel để khôi phục.')
+            next_check = time.monotonic() + interval
+        time.sleep(1)
+
+
 def main(args=None):
     parser = argparse.ArgumentParser(description='Bật backend và tunnel với URL cố định.')
     parser.add_argument('--temporary', action='store_true', help='Cho phép tunnel tạm đổi URL khi chưa có tunnel.json.')
@@ -173,9 +191,7 @@ def main(args=None):
                 print('Tunnel tạm: địa chỉ đổi sau mỗi lần chạy; cần cài lại cấu hình app khi đổi.', flush=True)
             print('Cài app: python3 scripts/flutter-local.py --phone run -d <device-id>', flush=True)
             print('Giữ terminal mở và Mac thức. Ctrl+C dừng cả backend lẫn tunnel.', flush=True)
-            while backend.poll() is None and tunnel.poll() is None:
-                time.sleep(1)
-            raise RuntimeError('Backend hoặc tunnel đã dừng. Chạy lại lệnh để kết nối.')
+            supervise(url, token, [backend, tunnel])
     except KeyboardInterrupt:
         return 0
     except (RuntimeError, AppError) as error:

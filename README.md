@@ -69,6 +69,23 @@ python3 scripts/flutter-local.py run -d <android-device-id>
 
 ## Một lệnh bật backend + tunnel cho điện thoại thật
 
+Để chạy nền trên macOS với URL cố định, dừng backend/tunnel chạy thủ công rồi chạy:
+
+```sh
+python3 scripts/install-phone-service.py
+```
+
+Dịch vụ `dev.quyet.quizmind.phone` tự chạy khi đăng nhập macOS, tự bật lại khi tiến trình lỗi và kiểm tra HTTPS mỗi 30 giây. Ba lần kiểm tra thất bại liên tiếp sẽ khởi động lại backend/tunnel. Giữ nguyên hostname và token nên không cần build lại app. `caffeinate -i` ngăn Mac tự ngủ khi dịch vụ hoạt động; đóng nắp, chủ động cho máy ngủ, mất mạng, tắt máy hoặc giới hạn nhà cung cấp vẫn có thể gây gián đoạn. Log riêng tại `~/.config/quizmind/phone-service.{out,err}.log` và `phone.log`. Không chạy đồng thời với backend/tunnel thủ công.
+
+Code chạy nền được sao chép vào `~/.config/quizmind/phone-runtime` để tránh quyền truy cập Documents của macOS; dữ liệu và thông tin xác thực giữ nguyên vị trí hiện có. Chạy lại lệnh cài dịch vụ sau khi sửa backend/script để cập nhật bản chạy nền. Cần có `server/bin/extract` đã biên dịch (chạy `scripts/start-server.sh` một lần nếu chưa có).
+
+Để dừng và bỏ tự khởi động:
+
+```sh
+launchctl bootout gui/$(id -u)/dev.quyet.quizmind.phone
+rm ~/Library/LaunchAgents/dev.quyet.quizmind.phone.plist
+```
+
 Trong thư mục dự án, chạy:
 
 ```sh
